@@ -1,0 +1,15 @@
+# Node/Bun dependencies
+node_modules/
+bun.lockb
+
+# Logs & Cache
+*.log
+.cache/
+
+# SQLite Database
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+
+# VS Code settings
+.vscode/
