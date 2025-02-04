@@ -10,6 +10,7 @@ export interface Thread {
     title: string;
     url: string;
     creator: string;
+    created_at: string;
 }
 
 export interface Post {
@@ -17,6 +18,7 @@ export interface Post {
     thread_url: string;
     username: string;
     comment: string;
+    posted_at: string;
 }
 
 export interface RawComments {
@@ -24,10 +26,19 @@ export interface RawComments {
     "1": string;
     length: number;
 }
+
 export interface RawUsernames {
     "0": string;
     "1": string;
     length: number;
+}
+
+export interface ScrapingStats {
+    subforums: number;
+    threads: number;
+    posts: number;
+    pagesProcessed: number;
+    startTime: Date;
 }
 
 export const EMOJI_SUCCESS = '✅';

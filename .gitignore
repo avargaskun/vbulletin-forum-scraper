@@ -10,6 +10,3 @@ bun.lockb
 data/*.db
 data/*.sqlite
 data/*.sqlite3
-
-# VS Code settings
-.vscode/

@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "bun run src/scraper/scraper.ts",
-    "browse": "bun run src/cli/forum_browser.ts",
+    "scrape": "bun run src/scraper/scraper.ts",
+    "browse": "bun run src/cli/viewer.ts",
     "db:reset": "bun run src/database/index.ts",
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
@@ -26,7 +26,8 @@
   },
   "dependencies": {
     "cheerio": "^1.0.0-rc.12",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "node-fetch": "^3.3.2"
   },
   "engines": {
     "bun": ">=1.0.0"
