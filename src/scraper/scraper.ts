@@ -1,11 +1,8 @@
 import * as cheerio from 'cheerio';
 import fetch from 'node-fetch';
 import { createInterface } from 'readline';
-import { unlink } from 'fs/promises';
-import { existsSync } from 'fs';
 import { config } from '../config';
 import {
-    setupDatabase,
     initialiseDatabase,
     insertSubforum,
     insertThread,
@@ -18,7 +15,8 @@ import {
     EMOJI_ERROR,
     EMOJI_WARN,
     EMOJI_INFO,
-    type ScrapingStats
+    type ScrapingStats,
+    type FetchError
 } from '../types/types';
 
 const readline = createInterface({
@@ -50,12 +48,6 @@ async function rateLimit(): Promise<void> {
     lastRequestTime = Date.now();
 }
 
-function askQuestion(question: string): Promise<string> {
-    return new Promise((resolve) => {
-        readline.question(question, resolve);
-    });
-}
-
 function printProgress(): void {
     const duration = (new Date().getTime() - stats.startTime.getTime()) / 1000;
     console.log('\n=== Scraping Progress ===');
@@ -68,8 +60,15 @@ function printProgress(): void {
     console.log('=======================\n');
 }
 
+function createFetchError(type: FetchError['type'], message: string, status?: number): FetchError {
+    const error = new Error(message) as FetchError;
+    error.type = type;
+    if (status) error.status = status;
+    return error;
+}
+
 async function fetchWithRetry(url: string): Promise<string> {
-    let lastError: Error | null = null;
+    let lastError: FetchError | null = null;
 
     for (let attempt = 1; attempt <= config.MAX_RETRIES; attempt++) {
         try {
@@ -79,18 +78,23 @@ async function fetchWithRetry(url: string): Promise<string> {
             const response = await fetch(url, { headers: config.HEADERS });
 
             if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+                throw createFetchError('http', `HTTP error! status: ${response.status}`, response.status);
             }
 
             const text = await response.text();
+
             if (!text || text.length === 0) {
-                throw new Error('Empty response received');
+                throw createFetchError('empty', 'Empty response received');
             }
 
             return text;
+
         } catch (error) {
-            lastError = error as Error;
-            console.error(`${EMOJI_ERROR} Attempt ${attempt} failed:`, error.message);
+            lastError = error instanceof Error
+                ? createFetchError('network', error.message)
+                : createFetchError('network', 'Unknown error occurred');
+
+            console.error(`${EMOJI_ERROR} Attempt ${attempt} failed:`, lastError.message);
 
             if (attempt < config.MAX_RETRIES) {
                 const delayTime = config.RETRY_DELAY * attempt;
@@ -100,28 +104,10 @@ async function fetchWithRetry(url: string): Promise<string> {
         }
     }
 
-    throw new Error(`All ${config.MAX_RETRIES} attempts failed. Last error: ${lastError?.message}`);
-}
-
-async function initializeDatabase(): Promise<void> {
-    if (existsSync(config.DATABASE_PATH)) {
-        const answer = await askQuestion('Database already exists. Do you want to regenerate it? (y/n) ');
-        if (answer.toLowerCase() === 'y') {
-            try {
-                await unlink(config.DATABASE_PATH);
-                console.log(`${EMOJI_SUCCESS} Existing database deleted.`);
-                await delay(100);
-            } catch (error) {
-                console.error(`${EMOJI_ERROR} Failed to delete existing database:`, error);
-                process.exit(1);
-            }
-        } else {
-            console.log(`${EMOJI_INFO} Using existing database.`);
-        }
-    }
-
-    setupDatabase();
-    await delay(500);
+    throw createFetchError(
+        lastError?.type || 'network',
+        `All ${config.MAX_RETRIES} attempts failed. Last error: ${lastError?.message || 'Unknown error'}`
+    );
 }
 
 async function scrapeSubforums(): Promise<void> {

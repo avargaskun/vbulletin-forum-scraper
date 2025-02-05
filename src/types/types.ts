@@ -42,6 +42,11 @@ export interface ScrapingStats {
     startTime: Date;
 }
 
+export interface FetchError extends Error {
+    status?: number;
+    type: 'http' | 'empty' | 'network';
+}
+
 export const EMOJI_SUCCESS = '✅';
 export const EMOJI_ERROR = '❌';
 export const EMOJI_INFO = 'ℹ️';
