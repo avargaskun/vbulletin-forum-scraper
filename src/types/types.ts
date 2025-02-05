@@ -40,11 +40,23 @@ export interface ScrapingStats {
     users: number;
     pagesProcessed: number;
     startTime: Date;
+    totals?: ForumStats;
+    percentComplete?: {
+        users: number;
+        threads: number;
+        posts: number;
+    };
 }
 
 export interface FetchError extends Error {
     status?: number;
     type: 'http' | 'empty' | 'network';
+}
+
+export interface ForumStats {
+    totalUsers: number;
+    totalThreads: number;
+    totalPosts: number;
 }
 
 export const EMOJI_SUCCESS = '✅';

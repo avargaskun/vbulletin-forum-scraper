@@ -8,6 +8,7 @@ import {
     closeDatabase
 } from '../database';
 import { EMOJI_SUCCESS, EMOJI_INFO, EMOJI_ERROR, EMOJI_WARN } from '../types/types';
+import { execSync } from 'node:child_process';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -39,6 +40,7 @@ async function showMenu(prompt: string, options: string[]): Promise<number> {
         rl.close();
     }
 }
+
 
 function formatDate(dateStr: string): string {
     try {

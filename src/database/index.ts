@@ -1,9 +1,8 @@
 import { Database } from 'bun:sqlite';
-import * as readline from 'node:readline/promises';
-import { stdin as input, stdout as output } from 'node:process';
 import { existsSync } from 'fs';
-import { config } from '../config';
 import { unlink } from 'fs/promises';
+import { config } from '../config';
+import { askQuestion } from '../utils/readline';
 import {
     EMOJI_SUCCESS,
     EMOJI_ERROR,
@@ -17,20 +16,13 @@ let db: Database;
 
 export async function initialiseDatabase(): Promise<void> {
     if (existsSync(config.DATABASE_PATH)) {
-        const rl = readline.createInterface({ input, output });
+        const answer = await askQuestion('Database exists. Delete and recreate? (y/N) ');
 
-        try {
-            const answer = await rl.question('Database exists. Delete and recreate? (y/N) ');
-
-            if (answer.trim().toLowerCase() === 'y') {
-                await unlink(config.DATABASE_PATH);
-                console.log(`${EMOJI_SUCCESS} Database reset.`);
-            } else {
-                console.log(`${EMOJI_INFO} Using existing database.`);
-                process.exit(0);
-            }
-        } finally {
-            rl.close();
+        if (answer.trim().toLowerCase() === 'y') {
+            await unlink(config.DATABASE_PATH);
+            console.log(`${EMOJI_SUCCESS} Database reset.`);
+        } else {
+            console.log(`${EMOJI_INFO} Using existing database.`);
         }
     }
 

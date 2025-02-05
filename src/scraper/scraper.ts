@@ -1,7 +1,7 @@
 import * as cheerio from 'cheerio';
 import fetch from 'node-fetch';
-import { createInterface } from 'readline';
 import { config } from '../config';
+import { askQuestion } from '../utils/readline';
 import {
     initialiseDatabase,
     insertSubforum,
@@ -16,13 +16,10 @@ import {
     EMOJI_WARN,
     EMOJI_INFO,
     type ScrapingStats,
-    type FetchError
+    type FetchError,
+    type ForumStats
 } from '../types/types';
 
-const readline = createInterface({
-    input: process.stdin,
-    output: process.stdout
-});
 
 let stats: ScrapingStats = {
     subforums: 0,
@@ -53,9 +50,17 @@ function printProgress(): void {
     console.log('\n=== Scraping Progress ===');
     console.log(`${EMOJI_INFO} Time Elapsed: ${duration.toFixed(0)} seconds`);
     console.log(`${EMOJI_INFO} Subforums: ${stats.subforums}`);
-    console.log(`${EMOJI_INFO} Threads: ${stats.threads}`);
-    console.log(`${EMOJI_INFO} Posts: ${stats.posts}`);
-    console.log(`${EMOJI_INFO} Unique Users: ${stats.users}`);
+
+    if (stats.totals) {
+        console.log(`${EMOJI_INFO} Threads: ${stats.threads}/${stats.totals.totalThreads} (${stats.percentComplete?.threads}%)`);
+        console.log(`${EMOJI_INFO} Posts: ${stats.posts}/${stats.totals.totalPosts} (${stats.percentComplete?.posts}%)`);
+        console.log(`${EMOJI_INFO} Users: ${stats.users}/${stats.totals.totalUsers} (${stats.percentComplete?.users}%)`);
+    } else {
+        console.log(`${EMOJI_INFO} Threads: ${stats.threads}`);
+        console.log(`${EMOJI_INFO} Posts: ${stats.posts}`);
+        console.log(`${EMOJI_INFO} Users: ${stats.users}`);
+    }
+
     console.log(`${EMOJI_INFO} Pages Processed: ${stats.pagesProcessed}`);
     console.log('=======================\n');
 }
@@ -108,6 +113,51 @@ async function fetchWithRetry(url: string): Promise<string> {
         lastError?.type || 'network',
         `All ${config.MAX_RETRIES} attempts failed. Last error: ${lastError?.message || 'Unknown error'}`
     );
+}
+
+async function getForumStats(): Promise<ForumStats> {
+    const html = await fetchWithRetry(config.FORUM_URL);
+    const $ = cheerio.load(html);
+
+    const totals: ForumStats = {
+        totalThreads: 0,
+        totalPosts: 0,
+        totalUsers: 0
+    };
+
+    try {
+        // Extract values based on <dt> and <dd> structure
+        totals.totalThreads = parseInt($('dt:contains("Threads") + dd').text().replace(/,/g, ''));
+        totals.totalPosts = parseInt($('dt:contains("Posts") + dd').text().replace(/,/g, ''));
+        totals.totalUsers = parseInt($('dt:contains("Members") + dd').text().replace(/,/g, ''));
+
+
+        // Output parsed statistics (rest of the function is the same)
+        console.log('\n=== Forum Statistics ===');
+        console.log(`${EMOJI_INFO} Total Threads: ${totals.totalThreads.toLocaleString()}`);
+        console.log(`${EMOJI_INFO} Total Posts: ${totals.totalPosts.toLocaleString()}`);
+        console.log(`${EMOJI_INFO} Total Users: ${totals.totalUsers.toLocaleString()}`);
+        console.log('=====================\n');
+
+        if (totals.totalThreads === 0 || totals.totalPosts === 0 || totals.totalUsers === 0) {
+            throw new Error('Failed to parse forum statistics');
+        }
+
+        return totals;
+    } catch (error) {
+        console.error(`${EMOJI_ERROR} Error parsing forum statistics:`, error);
+        throw error;
+    }
+}
+
+function updatePercentages(): void {
+    if (!stats.totals) return;
+
+    stats.percentComplete = {
+        users: stats.totals.totalUsers === 0 ? 0 : Math.round((stats.users / stats.totals.totalUsers) * 100), // Handle 0 totals
+        threads: stats.totals.totalThreads === 0 ? 0 : Math.round((stats.threads / stats.totals.totalThreads) * 100),
+        posts: stats.totals.totalPosts === 0 ? 0 : Math.round((stats.posts / stats.totals.totalPosts) * 100)
+    };
 }
 
 async function scrapeSubforums(): Promise<void> {
@@ -185,6 +235,8 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
                     stats.threads++;
 
                     await scrapeThreadPosts(threadUrl);
+                    stats.threads++;
+                    updatePercentages();
                     if (stats.threads % 10 === 0) printProgress();
 
                     await delay(config.DELAY_BETWEEN_REQUESTS);
@@ -229,8 +281,9 @@ async function scrapeThreadPosts(threadUrl: string): Promise<void> {
                     insertPost(threadUrl, username, comment, postedAt);
                     stats.posts++;
                     stats.users = getUserCount();
-
+                    updatePercentages();
                     if (stats.posts % 100 === 0) printProgress();
+                    
                 } catch (error) {
                     console.error(`${EMOJI_ERROR} Failed to process post:`, error);
                 }
@@ -249,6 +302,11 @@ async function scrapeThreadPosts(threadUrl: string): Promise<void> {
     }
 }
 
+async function confirmScrape(): Promise<boolean> {
+    const answer = await askQuestion('Continue with scrape? (y/N) ');
+    return answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes';
+}
+
 async function main() {
     try {
         stats = {
@@ -261,10 +319,19 @@ async function main() {
         };
 
         await initialiseDatabase();
+        console.log(`${EMOJI_INFO} Getting forum statistics...`);
+        stats.totals = await getForumStats();
+
+        if (!await confirmScrape()) {
+            console.log(`${EMOJI_INFO} Scraping cancelled.`);
+            return;
+        }
+
         console.log(`${EMOJI_INFO} Starting forum scrape...`);
         await scrapeSubforums();
 
         console.log('\nFinal Statistics:');
+        updatePercentages();
         printProgress();
 
         console.log(`${EMOJI_SUCCESS} Scraping completed successfully.`);
@@ -272,22 +339,7 @@ async function main() {
         console.error(`${EMOJI_ERROR} Fatal error:`, error);
     } finally {
         closeDatabase();
-        readline.close();
     }
 }
-
-process.on('SIGINT', () => {
-    console.log('\nGracefully shutting down...');
-    closeDatabase();
-    readline.close();
-    process.exit(0);
-});
-
-process.on('unhandledRejection', (error) => {
-    console.error('❌ Unhandled rejection:', error);
-    closeDatabase();
-    readline.close();
-    process.exit(1);
-});
 
 main();
