@@ -16,7 +16,7 @@ const FORUM_URL = process.env.FORUM_URL;
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
 
 // Rate limiting configuration with defaults
-const DELAY_BETWEEN_REQUESTS = parseInt(process.env.DELAY_BETWEEN_REQUESTS || '2000');
+const DELAY_BETWEEN_REQUESTS = parseInt(process.env.DELAY_BETWEEN_REQUESTS || '500');
 const MAX_RETRIES = parseInt(process.env.MAX_RETRIES || '3');
 const RETRY_DELAY = parseInt(process.env.RETRY_DELAY || '5000');
 const SUBFORUM_DELAY = parseInt(process.env.SUBFORUM_DELAY || '10000');

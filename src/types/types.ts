@@ -37,6 +37,7 @@ export interface ScrapingStats {
     subforums: number;
     threads: number;
     posts: number;
+    users: number;
     pagesProcessed: number;
     startTime: Date;
 }

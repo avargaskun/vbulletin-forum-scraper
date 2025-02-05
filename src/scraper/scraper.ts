@@ -1,4 +1,3 @@
-import * as dotenv from 'dotenv';
 import * as cheerio from 'cheerio';
 import fetch from 'node-fetch';
 import { createInterface } from 'readline';
@@ -7,10 +6,11 @@ import { existsSync } from 'fs';
 import { config } from '../config';
 import {
     setupDatabase,
+    initialiseDatabase,
     insertSubforum,
     insertThread,
     insertPost,
-    getSubforums,
+    getUserCount,
     closeDatabase
 } from '../database';
 import {
@@ -21,8 +21,6 @@ import {
     type ScrapingStats
 } from '../types/types';
 
-dotenv.config();
-
 const readline = createInterface({
     input: process.stdin,
     output: process.stdout
@@ -32,6 +30,7 @@ let stats: ScrapingStats = {
     subforums: 0,
     threads: 0,
     posts: 0,
+    users: 0,
     pagesProcessed: 0,
     startTime: new Date()
 };
@@ -64,6 +63,7 @@ function printProgress(): void {
     console.log(`${EMOJI_INFO} Subforums: ${stats.subforums}`);
     console.log(`${EMOJI_INFO} Threads: ${stats.threads}`);
     console.log(`${EMOJI_INFO} Posts: ${stats.posts}`);
+    console.log(`${EMOJI_INFO} Unique Users: ${stats.users}`);
     console.log(`${EMOJI_INFO} Pages Processed: ${stats.pagesProcessed}`);
     console.log('=======================\n');
 }
@@ -124,11 +124,6 @@ async function initializeDatabase(): Promise<void> {
     await delay(500);
 }
 
-async function scrapePagination($: cheerio.CheerioAPI): Promise<string | null> {
-    const nextPageLink = $('.pagination .next a').attr('href');
-    return nextPageLink ? new URL(nextPageLink, config.FORUM_URL).href : null;
-}
-
 async function scrapeSubforums(): Promise<void> {
     const html = await fetchWithRetry(config.FORUM_URL);
     const $ = cheerio.load(html);
@@ -156,7 +151,7 @@ async function scrapeSubforums(): Promise<void> {
             stats.subforums++;
 
             await scrapeSubforumThreads(url);
-            await delay(config.DELAY_BETWEEN_REQUESTS);
+            await delay(config.SUBFORUM_DELAY);
         } catch (error) {
             console.error(`${EMOJI_ERROR} Failed to process subforum:`, error);
         }
@@ -176,87 +171,95 @@ async function scrapeThreadCreator(threadUrl: string): Promise<{ creator: string
     }
 }
 
-async function scrapeSubforumThreads(subforumUrl: string, page: number = 1): Promise<void> {
-    try {
-        const pageUrl = page === 1 ? subforumUrl : `${subforumUrl}/page${page}`;
-        const html = await fetchWithRetry(pageUrl);
-        const $ = cheerio.load(html);
-        const threads = $('h3.threadtitle a');
+async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
+    let pageUrl: string = subforumUrl;
 
-        console.log(`${EMOJI_INFO} Found ${threads.length} threads on page ${page}`);
-        stats.pagesProcessed++;
+    while (pageUrl) {
+        try {
+            const html = await fetchWithRetry(pageUrl);
+            const $ = cheerio.load(html);
+            const threads = $('h3.threadtitle a');
 
-        for (const thread of threads) {
-            try {
-                const $thread = $(thread);
-                const title = $thread.text().trim();
-                if (!title) continue;
+            console.log(`${EMOJI_INFO} Found ${threads.length} threads on page`);
+            stats.pagesProcessed++;
 
-                const href = $thread.attr('href');
-                if (!href) continue;
+            for (const thread of threads) {
+                try {
+                    const $thread = $(thread);
+                    const title = $thread.text().trim();
+                    const href = $thread.attr('href');
 
-                const threadUrl = new URL(href, config.FORUM_URL).href;
-                const { creator, createdAt } = await scrapeThreadCreator(threadUrl);
+                    if (!title || !href) continue;
 
-                insertThread(subforumUrl, title, threadUrl, creator, createdAt);
-                console.log(`${EMOJI_SUCCESS} Added thread: ${title} (${createdAt})`);
-                stats.threads++;
+                    const threadUrl = new URL(href, config.FORUM_URL).href;
+                    const { creator, createdAt } = await scrapeThreadCreator(threadUrl);
 
-                await scrapeThreadPosts(threadUrl);
-                if (stats.threads % 10 === 0) printProgress();
+                    insertThread(subforumUrl, title, threadUrl, creator, createdAt);
+                    console.log(`${EMOJI_SUCCESS} Added thread: ${title} (${createdAt})`);
+                    stats.threads++;
 
-                await delay(config.DELAY_BETWEEN_REQUESTS);
-            } catch (error) {
-                console.error(`${EMOJI_ERROR} Failed to process thread:`, error);
+                    await scrapeThreadPosts(threadUrl);
+                    if (stats.threads % 10 === 0) printProgress();
+
+                    await delay(config.DELAY_BETWEEN_REQUESTS);
+                } catch (error) {
+                    console.error(`${EMOJI_ERROR} Failed to process thread:`, error);
+                }
             }
-        }
 
-        const nextPage = await scrapePagination($);
-        if (nextPage) {
-            await delay(config.DELAY_BETWEEN_REQUESTS);
-            await scrapeSubforumThreads(subforumUrl, page + 1);
+            const nextLink = $('.pagination .next a').attr('href');
+            pageUrl = nextLink ? new URL(nextLink, config.FORUM_URL).href : '';
+
+            if (pageUrl) {
+                await delay(config.DELAY_BETWEEN_REQUESTS);
+            }
+        } catch (error) {
+            console.error(`${EMOJI_ERROR} Failed to scrape page:`, error);
+            break;
         }
-    } catch (error) {
-        console.error(`${EMOJI_ERROR} Failed to scrape threads for ${subforumUrl}:`, error);
     }
 }
 
-async function scrapeThreadPosts(threadUrl: string, page: number = 1): Promise<void> {
-    try {
-        const pageUrl = page === 1 ? threadUrl : `${threadUrl}/page${page}`;
-        const html = await fetchWithRetry(pageUrl);
-        const $ = cheerio.load(html);
-        const posts = $('.postcontainer');
+async function scrapeThreadPosts(threadUrl: string): Promise<void> {
+    let pageUrl: string = threadUrl;
 
-        console.log(`${EMOJI_INFO} Found ${posts.length} posts on page ${page}`);
+    while (pageUrl) {
+        try {
+            const html = await fetchWithRetry(pageUrl);
+            const $ = cheerio.load(html);
+            const posts = $('.postcontainer');
 
-        for (const post of posts) {
-            try {
-                const $post = $(post);
-                const username = $post.find('.username').text().trim();
-                const comment = $post.find('.postcontent').text().trim();
-                const postedAt = $post.find('.postdate').text().trim() || new Date().toISOString();
+            console.log(`${EMOJI_INFO} Found ${posts.length} posts`);
 
-                if (!username || !comment) continue;
+            for (const post of posts) {
+                try {
+                    const $post = $(post);
+                    const username = $post.find('.username').text().trim();
+                    const comment = $post.find('.postcontent').text().trim();
+                    const postedAt = $post.find('.postdate').text().trim() || new Date().toISOString();
 
-                insertPost(threadUrl, username, comment, postedAt);
-                console.log(`${EMOJI_SUCCESS} Scraped post by ${username} (${postedAt})`);
-                stats.posts++;
+                    if (!username || !comment) continue;
 
-                if (stats.posts % 100 === 0) printProgress();
-                await delay(config.DELAY_BETWEEN_REQUESTS);
-            } catch (error) {
-                console.error(`${EMOJI_ERROR} Failed to process post:`, error);
+                    insertPost(threadUrl, username, comment, postedAt);
+                    stats.posts++;
+                    stats.users = getUserCount();
+
+                    if (stats.posts % 100 === 0) printProgress();
+                } catch (error) {
+                    console.error(`${EMOJI_ERROR} Failed to process post:`, error);
+                }
             }
-        }
 
-        const nextPage = await scrapePagination($);
-        if (nextPage) {
-            await delay(config.DELAY_BETWEEN_REQUESTS);
-            await scrapeThreadPosts(threadUrl, page + 1);
+            const nextLink = $('.pagination .next a').attr('href');
+            pageUrl = nextLink ? new URL(nextLink, config.FORUM_URL).href : '';
+
+            if (pageUrl) {
+                await delay(config.DELAY_BETWEEN_REQUESTS);
+            }
+        } catch (error) {
+            console.error(`${EMOJI_ERROR} Failed to scrape posts:`, error);
+            break;
         }
-    } catch (error) {
-        console.error(`${EMOJI_ERROR} Failed to scrape posts for thread ${threadUrl}:`, error);
     }
 }
 
@@ -266,11 +269,12 @@ async function main() {
             subforums: 0,
             threads: 0,
             posts: 0,
+            users: 0,
             pagesProcessed: 0,
             startTime: new Date()
         };
 
-        await initializeDatabase();
+        await initialiseDatabase();
         console.log(`${EMOJI_INFO} Starting forum scrape...`);
         await scrapeSubforums();
 

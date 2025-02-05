@@ -1,8 +1,13 @@
 import { Database } from 'bun:sqlite';
+import * as readline from 'node:readline/promises';
+import { stdin as input, stdout as output } from 'node:process';
+import { existsSync } from 'fs';
 import { config } from '../config';
+import { unlink } from 'fs/promises';
 import {
     EMOJI_SUCCESS,
     EMOJI_ERROR,
+    EMOJI_INFO,
     type Subforum,
     type Thread,
     type Post
@@ -10,12 +15,34 @@ import {
 
 let db: Database;
 
-function initializeDb() {
+export async function initialiseDatabase(): Promise<void> {
+    if (existsSync(config.DATABASE_PATH)) {
+        const rl = readline.createInterface({ input, output });
+
+        try {
+            const answer = await rl.question('Database exists. Delete and recreate? (y/N) ');
+
+            if (answer.trim().toLowerCase() === 'y') {
+                await unlink(config.DATABASE_PATH);
+                console.log(`${EMOJI_SUCCESS} Database reset.`);
+            } else {
+                console.log(`${EMOJI_INFO} Using existing database.`);
+                process.exit(0);
+            }
+        } finally {
+            rl.close();
+        }
+    }
+
+    setupDatabase();
+}
+
+function initialiseDb() {
     db = new Database(config.DATABASE_PATH, { create: true, readwrite: true });
 }
 
 function validateTables(): boolean {
-    const tables = ['subforums', 'threads', 'posts'];
+    const tables = ['subforums', 'threads', 'posts', 'users'];
     const existingTables = db.query("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[];
     const existingTableNames = new Set(existingTables.map(t => t.name));
 
@@ -31,7 +58,7 @@ function validateTables(): boolean {
 }
 
 export function setupDatabase(): void {
-    initializeDb();
+    initialiseDb();
 
     try {
         db.exec(`
@@ -54,6 +81,11 @@ export function setupDatabase(): void {
                 username TEXT NOT NULL,
                 comment TEXT NOT NULL,
                 posted_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS users (
+                username TEXT PRIMARY KEY,
+                first_seen TEXT NOT NULL,
+                post_count INTEGER DEFAULT 1
             );
         `);
         console.log(`${EMOJI_SUCCESS} Database setup completed.`);
@@ -107,11 +139,11 @@ export function getPostsByThread(threadUrl: string): Post[] {
 
 export function insertSubforum(title: string, url: string): void {
     try {
-        const stmt = db.prepare("INSERT INTO subforums (title, url) VALUES (?, ?)");
+        const stmt = db.prepare("INSERT OR IGNORE INTO subforums (title, url) VALUES (?, ?)");
         stmt.run(title, url);
-        console.log(`${EMOJI_SUCCESS} Subforum inserted: ${title}`);
+        console.log(`${EMOJI_SUCCESS} Subforum processed: ${title}`);
     } catch (error) {
-        console.error(`${EMOJI_ERROR} Failed to insert subforum:`, error);
+        console.error(`${EMOJI_ERROR} Failed to process subforum:`, error);
         throw error;
     }
 }
@@ -125,12 +157,12 @@ export function insertThread(
 ): void {
     try {
         const stmt = db.prepare(
-            "INSERT INTO threads (subforum_url, title, url, creator, created_at) VALUES (?, ?, ?, ?, ?)"
+            "INSERT OR IGNORE INTO threads (subforum_url, title, url, creator, created_at) VALUES (?, ?, ?, ?, ?)"
         );
         stmt.run(subforumUrl, title, url, creator, createdAt);
-        console.log(`${EMOJI_SUCCESS} Thread inserted: ${title} (${createdAt})`);
+        console.log(`${EMOJI_SUCCESS} Thread processed: ${title} (${createdAt})`);
     } catch (error) {
-        console.error(`${EMOJI_ERROR} Failed to insert thread:`, error);
+        console.error(`${EMOJI_ERROR} Failed to process thread:`, error);
         throw error;
     }
 }
@@ -143,14 +175,34 @@ export function insertPost(
 ): void {
     try {
         const stmt = db.prepare(
-            "INSERT INTO posts (thread_url, username, comment, posted_at) VALUES (?, ?, ?, ?)"
+            "INSERT OR IGNORE INTO posts (thread_url, username, comment, posted_at) VALUES (?, ?, ?, ?)"
         );
         stmt.run(threadUrl, username, comment, postedAt);
-        console.log(`${EMOJI_SUCCESS} Post inserted from ${username} (${postedAt})`);
+        trackUser(username, postedAt);
+        console.log(`${EMOJI_SUCCESS} Post processed from ${username} (${postedAt})`);
     } catch (error) {
-        console.error(`${EMOJI_ERROR} Failed to insert post:`, error);
+        console.error(`${EMOJI_ERROR} Failed to process post:`, error);
         throw error;
     }
+}
+
+export function trackUser(username: string, postedAt: string): void {
+    try {
+        const stmt = db.prepare(`
+            INSERT INTO users (username, first_seen, post_count)
+            VALUES (?, ?, 1)
+            ON CONFLICT(username) DO UPDATE SET
+            post_count = post_count + 1
+        `);
+        stmt.run(username, postedAt);
+    } catch (error) {
+        console.error(`${EMOJI_ERROR} Failed to track user:`, error);
+        throw error;
+    }
+}
+
+export function getUserCount(): number {
+    return (db.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number }).count;
 }
 
 export function closeDatabase(): void {
