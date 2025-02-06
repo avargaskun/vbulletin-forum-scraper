@@ -234,7 +234,13 @@ export function insertPost(
     }
 }
 
-function runWithArrayBuffer(stmt: Statement, ...params: any[]): ReturnType<Statement['run']> {
+
+// Define runWithArrayBuffer (it is just a pass through). This removes the error.
+function runWithArrayBuffer(stmt: any, ...params: any[]) {
+    // Ensure the last parameter is a Uint8Array
+    if (params.length > 0 && params[params.length - 1] instanceof ArrayBuffer) {
+        params[params.length - 1] = new Uint8Array(params[params.length - 1]);
+    }
     return stmt.run(...params);
 }
 
@@ -243,12 +249,14 @@ export async function insertFile(postId: number, filename: string, mimeType: str
         const stmt = db.prepare(
             "INSERT INTO files (post_id, filename, mime_type, file_data) VALUES (?, ?, ?, ?)"
         );
-        const result = runWithArrayBuffer(stmt, postId, filename, mimeType, fileData);
-        const id = result.lastInsertRowid;
 
+        const result = runWithArrayBuffer(stmt, postId, filename, mimeType, fileData);
+
+        const id = result.lastInsertRowid;
         if (typeof id !== 'number') {
             throw new Error("Failed to insert file and retrieve ID");
         }
+
         return { id, postId, filename, mimeType, fileData };
 
     } catch (error) {
@@ -256,6 +264,7 @@ export async function insertFile(postId: number, filename: string, mimeType: str
         throw error;
     }
 }
+
 export function trackUser(username: string, postedAt: string): void {
     try {
         const stmt = db.prepare(`

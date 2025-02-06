@@ -49,6 +49,8 @@ export interface ScrapingStats {
     users: number;
     pagesProcessed: number;
     startTime: Date;
+    binariesDownloaded: number;
+    binariesFailed: number;     
     percentComplete?: {
         threads: number;
         posts: number;

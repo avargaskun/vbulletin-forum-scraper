@@ -10,17 +10,25 @@ import {
     getThreadsBySubforum,
     closeDatabase
 } from '../database';
-import {
-    EMOJI_SUCCESS,
-    EMOJI_ERROR,
-    EMOJI_WARN,
-    EMOJI_INFO,
-    type ScrapingStats,
-    type FetchError,
-    type ForumStats,
-    type Subforum
+import type {
+    ScrapingStats,
+    FetchError,
+    ForumStats,
+    Subforum
 } from '../types/types';
 import { askQuestion } from '../utils/readline';
+import {
+    logError,
+    logWarning,
+    logSuccess,
+    logInfo,
+    simpleLogInfo,
+    printProgress,
+    printForumStats,
+    printTestModeConfig
+} from '../utils/logging';
+import * as fs from 'fs/promises'; // Import fs.promises
+import * as path from 'path';
 
 let stats: ScrapingStats = {
     subforums: 0,
@@ -28,7 +36,9 @@ let stats: ScrapingStats = {
     posts: 0,
     users: 0,
     pagesProcessed: 0,
-    startTime: new Date()
+    startTime: new Date(),
+    binariesDownloaded: 0, // Add the new fields
+    binariesFailed: 0,
 };
 
 let lastRequestTime = 0;
@@ -46,26 +56,6 @@ async function rateLimit(): Promise<void> {
     lastRequestTime = Date.now();
 }
 
-function printProgress(): void {
-    const duration = (new Date().getTime() - stats.startTime.getTime()) / 1000;
-    console.log('\n=== Scraping Progress ===');
-    console.log(`${EMOJI_INFO} Time Elapsed: ${duration.toFixed(0)} seconds`);
-    console.log(`${EMOJI_INFO} Subforums: ${stats.subforums}`);
-
-    if (stats.totals) {
-        console.log(`${EMOJI_INFO} Threads: ${stats.threads}/${stats.totals.totalThreads} (${stats.percentComplete?.threads}%)`);
-        console.log(`${EMOJI_INFO} Posts: ${stats.posts}/${stats.totals.totalPosts} (${stats.percentComplete?.posts}%)`);
-        console.log(`${EMOJI_INFO} Users: ${stats.users}/${stats.totals.totalUsers} (${stats.percentComplete?.users}%)`);
-    } else {
-        console.log(`${EMOJI_INFO} Threads: ${stats.threads}`);
-        console.log(`${EMOJI_INFO} Posts: ${stats.posts}`);
-        console.log(`${EMOJI_INFO} Users: ${stats.users}`);
-    }
-
-    console.log(`${EMOJI_INFO} Pages Processed: ${stats.pagesProcessed}`);
-    console.log('=======================\n');
-}
-
 function createFetchError(type: FetchError['type'], message: string, status?: number): FetchError {
     const error = new Error(message) as FetchError;
     error.type = type;
@@ -79,7 +69,7 @@ async function fetchWithRetry(url: string): Promise<string> {
     for (let attempt = 1; attempt <= config.MAX_RETRIES; attempt++) {
         try {
             await rateLimit();
-            console.log(`${EMOJI_INFO} Fetching: ${url} (Attempt ${attempt}/${config.MAX_RETRIES})`);
+            simpleLogInfo(`Fetching: ${url} (Attempt ${attempt}/${config.MAX_RETRIES})`);
             const response = await fetch(url, { headers: config.HEADERS });
 
             if (!response.ok) {
@@ -99,11 +89,11 @@ async function fetchWithRetry(url: string): Promise<string> {
                 ? createFetchError('network', error.message)
                 : createFetchError('network', 'Unknown error occurred');
 
-            console.error(`${EMOJI_ERROR} Attempt ${attempt} failed:`, lastError.message);
+            logError(`Attempt ${attempt} failed: ${lastError.message}`, lastError);
 
             if (attempt < config.MAX_RETRIES) {
                 const delayTime = config.RETRY_DELAY * attempt;
-                console.log(`${EMOJI_WARN} Waiting ${delayTime/1000} seconds before retry...`);
+                logWarning(`Waiting ${delayTime/1000} seconds before retry...`);
                 await delay(delayTime);
             }
         }
@@ -130,11 +120,7 @@ async function getForumStats(): Promise<ForumStats> {
         totals.totalPosts = parseInt($('dt:contains("Posts") + dd').text().replace(/,/g, ''), 10);
         totals.totalUsers = parseInt($('dt:contains("Members") + dd').text().replace(/,/g, ''), 10);
 
-        console.log('\n=== Forum Statistics ===');
-        console.log(`${EMOJI_INFO} Total Threads: ${totals.totalThreads.toLocaleString()}`);
-        console.log(`${EMOJI_INFO} Total Posts: ${totals.totalPosts.toLocaleString()}`);
-        console.log(`${EMOJI_INFO} Total Users: ${totals.totalUsers.toLocaleString()}`);
-        console.log('=====================\n');
+        printForumStats(totals);
 
         if (totals.totalThreads === 0 || totals.totalPosts === 0 || totals.totalUsers === 0) {
             throw new Error('Failed to parse forum statistics');
@@ -142,7 +128,7 @@ async function getForumStats(): Promise<ForumStats> {
         return totals;
 
     } catch (error) {
-        console.error(`${EMOJI_ERROR} Error parsing forum statistics:`, error);
+        logError('Error parsing forum statistics', error as Error);
         throw error;
     }
 }
@@ -164,30 +150,26 @@ async function scrapeSubforums(url: string = config.FORUM_URL, parentId: number 
 
     const html = await fetchWithRetry(url);
     if (!html) {
-        console.error(`${EMOJI_ERROR} Failed to fetch forum HTML from ${url}.`);
+        logError(`Failed to fetch forum HTML from ${url}.`);
         return;
     }
     const $ = cheerio.load(html);
 
-    // *** CORRECTED SELECTOR ***
     const subforumListItems = $('ol#forums > li.forumbit_nopost > ol.childforum > li.forumbit_post h2.forumtitle > a');
 
-    console.log(`${EMOJI_INFO} Found ${subforumListItems.length} subforums/child forums on ${url}`);
+    simpleLogInfo(`Found ${subforumListItems.length} subforums/child forums on ${url}`);
 
     for (const element of subforumListItems.toArray()) {
-        // ... (rest of the function remains the same) ...
-         if (config.TEST_MODE && stats.subforums >= (config.MAX_SUBFORUMS ?? Infinity)) {
+        if (config.TEST_MODE && stats.subforums >= (config.MAX_SUBFORUMS ?? Infinity)) {
             return;
         }
 
         const $listItem = $(element);
-		//The link is the element now. No need to find
-        const $link = $listItem;
-        const title = $link.text().trim();
-        let href = $link.attr('href');
+        const title = $listItem.text().trim();
+        let href = $listItem.attr('href');
 
         if (!title || !href) {
-            console.log(`${EMOJI_WARN} Invalid forum title or href on ${url}`);
+            logWarning(`Invalid forum title or href on ${url}`);
             continue;
         }
 
@@ -196,18 +178,18 @@ async function scrapeSubforums(url: string = config.FORUM_URL, parentId: number 
         let subforumRecord: Subforum;
         try {
             subforumRecord = await insertSubforum(title, subforumUrl, parentId);
-            console.log(`${EMOJI_SUCCESS} Added subforum: ${title} with parentId ${parentId}`);
+            logSuccess(`Added subforum: ${title} with parentId ${parentId}`);
             stats.subforums++;
         } catch (error) {
-            console.error(`${EMOJI_ERROR} Failed to insert subforum ${title}:`, error);
+            logError(`Failed to insert subforum ${title}`, error as Error);
             continue;
         }
 
         try {
-           await scrapeSubforumThreads(subforumUrl);
-           await delay(config.SUBFORUM_DELAY);
-        } catch(error){
-            console.error(`${EMOJI_ERROR} Failed to scrape subforum threads.`, error)
+            await scrapeSubforumThreads(subforumUrl);
+            await delay(config.SUBFORUM_DELAY);
+        } catch(error) {
+            logError('Failed to scrape subforum threads', error as Error);
         }
 
         await scrapeSubforums(subforumUrl, subforumRecord.id);
@@ -225,14 +207,14 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
         try {
             const html = await fetchWithRetry(pageUrl);
             if (!html) {
-                console.error(`${EMOJI_ERROR} Failed to fetch subforum HTML: ${pageUrl}`);
+                logError(`Failed to fetch subforum HTML: ${pageUrl}`);
                 return;
             }
             const $ = cheerio.load(html);
 
             const threadRows = $("#threads > li.threadbit");
 
-            console.log(`${EMOJI_INFO} Found ${threadRows.length} threads on page: ${pageUrl}`);
+            simpleLogInfo(`Found ${threadRows.length} threads on page: ${pageUrl}`);
             stats.pagesProcessed++;
             pageCount++;
 
@@ -249,7 +231,7 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
                     const href = titleLink.attr('href');
 
                     if (!title || !href) {
-                        console.warn(`${EMOJI_WARN} Skipping thread due to missing title or href on page: ${pageUrl}`);
+                        logWarning(`Skipping thread due to missing title or href on page: ${pageUrl}`);
                         continue;
                     }
 
@@ -258,7 +240,8 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
                     const authorDateSpan = $threadRow.find('.threadmeta .author span.label');
                     const authorDateText = authorDateSpan.text().trim();
 
-                    const authorMatch = authorDateText.match(/Started by\s*<a[^>]*>(.*?)<\/a>,\s*(.*)/) || authorDateText.match(/Started by\s*([^,]*),\s*(.*)/);
+                    const authorMatch = authorDateText.match(/Started by\s*<a[^>]*>(.*?)<\/a>,\s*(.*)/) ||
+                                     authorDateText.match(/Started by\s*([^,]*),\s*(.*)/);
 
                     let creator = "Unknown";
                     let createdAt = new Date().toISOString();
@@ -269,20 +252,20 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
                     }
 
                     insertThread(subforumUrl, title, threadUrl, creator, createdAt);
-                    console.log(`${EMOJI_SUCCESS} Added thread: ${title} (${createdAt}) by ${creator}`);
+                    logSuccess(`Added thread: ${title} (${createdAt}) by ${creator}`);
                     stats.threads++;
                     threadCount++;
 
                     await delay(config.DELAY_BETWEEN_REQUESTS);
 
-                } catch (error: any) {
-                    console.error(`${EMOJI_ERROR} Failed to process thread on page ${pageUrl}:`, error.message, error.stack);
+                } catch (error) {
+                    logError(`Failed to process thread on page ${pageUrl}`, error as Error);
                 }
             }
 
             let nextLink = $('div[id*="-pagenav-"] .pagination a').last().attr('href');
 
-             if (!nextLink) {
+            if (!nextLink) {
                 nextLink = $('a[rel="next"]').attr('href');
             }
             pageUrl = nextLink ? new URL(nextLink, config.FORUM_URL).href : '';
@@ -290,12 +273,40 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
             if (pageUrl) {
                 await delay(config.DELAY_BETWEEN_REQUESTS);
             }
-        } catch (error: any) {
-            console.error(`${EMOJI_ERROR} Failed to scrape page ${pageUrl}:`, error.message, error.stack);
+        } catch (error) {
+            logError(`Failed to scrape page ${pageUrl}`, error as Error);
             break;
         }
     }
 }
+
+
+async function downloadFile(fileUrl: string, postId: number): Promise<void> {
+    try {
+        const fileResponse = await fetch(fileUrl, { headers: config.HEADERS });
+        if (!fileResponse.ok) {
+            logError(`Error downloading file: ${fileUrl}, Status: ${fileResponse.status}`);
+            stats.binariesFailed++;
+            return;
+        }
+        const fileArrayBuffer = await fileResponse.arrayBuffer();
+        const mimeType = fileResponse.headers.get('content-type');
+        const urlObj = new URL(fileUrl);
+        const filename = urlObj.pathname.split('/').pop() || `unknown-${Date.now()}`;
+
+        if (postId) {
+            await insertFile(postId, filename, mimeType, fileArrayBuffer);
+            stats.binariesDownloaded++;
+            logSuccess(`Inserted file into database: ${filename}`);
+        }
+
+
+    } catch (fileError) {
+        logError(`Error processing file ${fileUrl}`, fileError as Error);
+        stats.binariesFailed++;
+    }
+}
+
 
 async function scrapeThreadPosts(threadUrl: string, allUsers: Set<string>): Promise<void> {
     let pageUrl: string = threadUrl;
@@ -303,19 +314,19 @@ async function scrapeThreadPosts(threadUrl: string, allUsers: Set<string>): Prom
 
     while (pageUrl) {
         if(config.TEST_MODE && pageCount >= (config.MAX_PAGES_PER_THREAD ?? Infinity)) {
-          return;
+            return;
         }
         try {
             const html = await fetchWithRetry(pageUrl);
             const $ = cheerio.load(html);
-            const posts = $('li.postcontainer'); 
+            const posts = $('li.postcontainer');
 
-            console.log(`${EMOJI_INFO} Found ${posts.length} posts on page ${pageUrl}`);
+            simpleLogInfo(`Found ${posts.length} posts on page ${pageUrl}`);
             pageCount++;
 
             let postCount = 0;
             for (const post of posts) {
-              if (config.TEST_MODE && postCount >= (config.MAX_POSTS_PER_THREAD ?? Infinity)) {
+                if (config.TEST_MODE && postCount >= (config.MAX_POSTS_PER_THREAD ?? Infinity)) {
                     break;
                 }
                 try {
@@ -323,13 +334,16 @@ async function scrapeThreadPosts(threadUrl: string, allUsers: Set<string>): Prom
 
                     const usernameElement = $post.find('.username strong');
                     const username = usernameElement.text().trim();
-                    const userUrl =  new URL($post.find('a.username').attr('href') || '', config.FORUM_URL).href;
+                    const userUrl = new URL($post.find('a.username').attr('href') || '', config.FORUM_URL).href;
                     const comment = $post.find('div[id^="post_message_"] blockquote.postcontent').text().trim();
                     const postedAt = $post.find('div.posthead span.postdate span.date').text().trim() || new Date().toISOString();
+                    // Extract Post ID
+                    const postIdMatch = $post.attr('id')?.match(/post_(\d+)/);
+                    const postId = postIdMatch ? parseInt(postIdMatch[1], 10) : null;
 
 
-                    if (username && comment && userUrl) {
-                        const postId = insertPost(threadUrl, username, comment, postedAt, userUrl);
+                    if (username && comment && userUrl && postId) {
+                        insertPost(threadUrl, username, comment, postedAt, userUrl);
 
                         const imageLinks = $post.find('.postcontent img[src]');
                         for (const img of imageLinks.toArray()) {
@@ -339,38 +353,24 @@ async function scrapeThreadPosts(threadUrl: string, allUsers: Set<string>): Prom
                                 const fileUrl = new URL(src, config.FORUM_URL).href;
 
                                 if (config.DOWNLOAD_FILES) {
-                                    try {
-                                        const fileResponse = await fetch(fileUrl);
-                                        if (!fileResponse.ok) {
-                                            console.error(`Error downloading file: ${fileUrl}`);
-                                            continue;
-                                        }
-                                        const fileArrayBuffer = await fileResponse.arrayBuffer();
-                                        const mimeType = fileResponse.headers.get('content-type');
-                                        const urlObj = new URL(fileUrl);
-                                        const filename = urlObj.pathname.split('/').pop() || 'unknown';
-
-                                         if (postId) {
-                                            insertFile(postId, filename, mimeType, fileArrayBuffer);
-                                        }
-                                    } catch (fileError) {
-                                        console.error(`Error processing file ${fileUrl}:`, fileError);
-                                    }
+                                    await downloadFile(fileUrl, postId); // Use the new download function
                                 } else {
-                                    console.log(`${EMOJI_INFO} Would have downloaded: ${fileUrl}`);
+                                    simpleLogInfo(`Would have downloaded: ${fileUrl}`);
                                 }
                             }
                         }
                         allUsers.add(username);
+                    } else {
+                        logWarning(`Skipping post due to missing data on page ${pageUrl}`);
                     }
 
                     stats.posts++;
                     postCount++;
                     updatePercentages();
-                    if (stats.posts % 100 === 0) printProgress();
+                    if (stats.posts % 100 === 0) printProgress(stats);
 
                 } catch (error) {
-                    console.error(`${EMOJI_ERROR} Failed to process post:`, error);
+                    logError('Failed to process post', error as Error);
                 }
             }
 
@@ -381,22 +381,21 @@ async function scrapeThreadPosts(threadUrl: string, allUsers: Set<string>): Prom
                 await delay(config.DELAY_BETWEEN_REQUESTS);
             }
         } catch (error) {
-            console.error(`${EMOJI_ERROR} Failed to scrape posts:`, error);
+            logError('Failed to scrape posts', error as Error);
             break;
         }
     }
 }
 
 async function confirmScrape(): Promise<boolean> {
-     if (config.TEST_MODE) {
-        console.warn(`${EMOJI_WARN} TEST_MODE is enabled.  Scraping will be limited.`);
-        console.warn(`${EMOJI_WARN} Max Subforums: ${config.MAX_SUBFORUMS ?? 'Unlimited'}`);
-        console.warn(`${EMOJI_WARN} Max Threads per Subforum: ${config.MAX_THREADS_PER_SUBFORUM ?? 'Unlimited'}`);
-        console.warn(`${EMOJI_WARN} Max Posts per Thread: ${config.MAX_POSTS_PER_THREAD ?? 'Unlimited'}`);
-        console.warn(`${EMOJI_WARN} Max Pages per Subforum: ${config.MAX_PAGES_PER_SUBFORUM ?? 'Unlimited'}`);
-        console.warn(`${EMOJI_WARN} Max Pages per Thread: ${config.MAX_PAGES_PER_THREAD ?? 'Unlimited'}`);
+    if (config.TEST_MODE) {
+        // Print test mode config before asking for confirmation
+        await new Promise(resolve => setTimeout(resolve, 100));
+        printTestModeConfig(config);
+        await new Promise(resolve => setTimeout(resolve, 100));
     }
     const answer = await askQuestion('Continue with scrape? (y/N) ');
+    await new Promise(resolve => setTimeout(resolve, 100));
     return answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes';
 }
 
@@ -404,25 +403,27 @@ async function main() {
     const allUsers = new Set<string>();
 
     try {
-       stats = {
+        stats = {
             subforums: 0,
             threads: 0,
             posts: 0,
             users: 0,
             pagesProcessed: 0,
-            startTime: new Date()
+            startTime: new Date(),
+            binariesDownloaded: 0, // Initialize new fields
+            binariesFailed: 0,
         };
 
         await initialiseDatabase();
-        console.log(`${EMOJI_INFO} Getting forum statistics...`);
+        logInfo('Getting forum statistics...');
         stats.totals = await getForumStats();
 
         if (!await confirmScrape()) {
-            console.log(`${EMOJI_INFO} Scraping cancelled.`);
+            logInfo('Scraping cancelled.');
             return;
         }
 
-        console.log(`${EMOJI_INFO} Starting forum scrape...`);
+        logInfo('Starting forum scrape...');
         await scrapeSubforums();
 
         const subforums = await getSubforums();
@@ -435,14 +436,14 @@ async function main() {
             await delay(config.SUBFORUM_DELAY);
         }
 
-        console.log('\nFinal Statistics:');
+        logInfo('Final Statistics:');
         stats.users = allUsers.size;
         updatePercentages();
-        printProgress();
+        printProgress(stats);
 
-        console.log(`${EMOJI_SUCCESS} Scraping completed successfully.`);
+        logSuccess('Scraping completed successfully.');
     } catch (error) {
-        console.error(`${EMOJI_ERROR} Fatal error:`, error);
+        logError('Fatal error', error as Error);
     } finally {
         closeDatabase();
     }
