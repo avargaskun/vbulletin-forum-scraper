@@ -1,3 +1,8 @@
+export const EMOJI_SUCCESS = '✅';
+export const EMOJI_ERROR = '❌';
+export const EMOJI_WARN = '⚠️';
+export const EMOJI_INFO = 'ℹ️';
+
 export interface Subforum {
     id: number;
     title: string;
@@ -19,18 +24,20 @@ export interface Post {
     username: string;
     comment: string;
     posted_at: string;
+    user_url: string;
 }
 
-export interface RawComments {
-    "0": string;
-    "1": string;
-    length: number;
+export interface File { // Renamed
+    id: number;
+    post_id: number;
+    filename: string;
+    mime_type: string | null;
+    file_data: ArrayBuffer;
 }
-
-export interface RawUsernames {
-    "0": string;
-    "1": string;
-    length: number;
+export interface ForumStats {
+  totalThreads: number;
+  totalPosts: number;
+  totalUsers: number
 }
 
 export interface ScrapingStats {
@@ -40,26 +47,26 @@ export interface ScrapingStats {
     users: number;
     pagesProcessed: number;
     startTime: Date;
-    totals?: ForumStats;
     percentComplete?: {
-        users: number;
         threads: number;
         posts: number;
-    };
+        users: number
+    },
+    totals?: ForumStats
 }
-
 export interface FetchError extends Error {
+    type: 'network' | 'http' | 'empty';
     status?: number;
-    type: 'http' | 'empty' | 'network';
 }
 
-export interface ForumStats {
-    totalUsers: number;
-    totalThreads: number;
-    totalPosts: number;
+export interface Config {
+    FORUM_URL: string;
+    DATABASE_PATH: string;
+    USER_AGENT: string;
+    HEADERS: { 'User-Agent': string };
+    DELAY_BETWEEN_REQUESTS: number;
+    MAX_RETRIES: number;
+    RETRY_DELAY: number;
+    SUBFORUM_DELAY: number;
+    DOWNLOAD_FILES: boolean;
 }
-
-export const EMOJI_SUCCESS = '✅';
-export const EMOJI_ERROR = '❌';
-export const EMOJI_INFO = 'ℹ️';
-export const EMOJI_WARN = '⚠️';
