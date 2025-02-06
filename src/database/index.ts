@@ -26,7 +26,7 @@ export async function initialiseDatabase(): Promise<void> {
             console.log(`${EMOJI_INFO} Using existing database.`);
         }
     }
-    setupDatabase();
+    await setupDatabase();
 }
 
 function validateTables(): boolean {
@@ -44,93 +44,151 @@ function validateTables(): boolean {
     return true;
 }
 
-export function setupDatabase(): void {
+export async function setupDatabase(): Promise<void> {
     db = new Database(config.DATABASE_PATH, { create: true, readwrite: true });
 
     try {
         db.exec(`
-            CREATE TABLE IF NOT EXISTS subforums (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                url TEXT UNIQUE NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS threads (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                subforum_url TEXT NOT NULL,
-                title TEXT NOT NULL,
-                url TEXT UNIQUE NOT NULL,
-                creator TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (subforum_url) REFERENCES subforums(url)
-            );
-            CREATE TABLE IF NOT EXISTS posts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                thread_url TEXT NOT NULL,
-                username TEXT NOT NULL,
-                comment TEXT NOT NULL,
-                posted_at TEXT NOT NULL,
-                user_url TEXT,
-                FOREIGN KEY (thread_url) REFERENCES threads(url)
-            );
-            CREATE TABLE IF NOT EXISTS users (
-                username TEXT PRIMARY KEY,
-                first_seen TEXT NOT NULL,
-                post_count INTEGER DEFAULT 1
-            );
-            CREATE TABLE IF NOT EXISTS files (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                post_id INTEGER NOT NULL,
-                filename TEXT NOT NULL,
-                mime_type TEXT,
-                file_data BLOB NOT NULL,
-                FOREIGN KEY (post_id) REFERENCES posts(id)
-            );
-        `);
+        CREATE TABLE IF NOT EXISTS subforums (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            url TEXT UNIQUE NOT NULL,
+            parent_id INTEGER,
+            FOREIGN KEY (parent_id) REFERENCES subforums(id)
+        );
+        CREATE TABLE IF NOT EXISTS threads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subforum_url TEXT NOT NULL,
+            title TEXT NOT NULL,
+            url TEXT UNIQUE NOT NULL,
+            creator TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (subforum_url) REFERENCES subforums(url)
+        );
+        CREATE TABLE IF NOT EXISTS posts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            thread_url TEXT NOT NULL,
+            username TEXT NOT NULL,
+            comment TEXT NOT NULL,
+            posted_at TEXT NOT NULL,
+            user_url TEXT,
+            FOREIGN KEY (thread_url) REFERENCES threads(url)
+        );
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY,
+            first_seen TEXT NOT NULL,
+            post_count INTEGER DEFAULT 1
+        );
+        CREATE TABLE IF NOT EXISTS files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id INTEGER NOT NULL,
+            filename TEXT NOT NULL,
+            mime_type TEXT,
+            file_data BLOB NOT NULL,
+            FOREIGN KEY (post_id) REFERENCES posts(id)
+        );
+    `);
         console.log(`${EMOJI_SUCCESS} Database setup completed.`);
 
         const tablesExist = validateTables();
         if (!tablesExist) {
             console.error(`${EMOJI_ERROR} Database setup failed - tables not created properly`);
-            closeDatabase();
+            await closeDatabase();
             process.exit(1);
         }
     } catch (error) {
         console.error(`${EMOJI_ERROR} Failed to setup database:`, error);
-        closeDatabase();
+        await closeDatabase();
         process.exit(1);
     }
 }
 
-export function getSubforums(): Subforum[] {
-    const stmt = db.prepare("SELECT id, title, url FROM subforums");
-    const subforums = stmt.all() as Subforum[];
-    console.log(`${EMOJI_SUCCESS} Loaded ${subforums.length} subforums.`);
+export async function getSubforums(parentId: number | null = null): Promise<Subforum[]> {
+    let stmt: Statement;
+    if (parentId === null) {
+        stmt = db.prepare("SELECT id, title, url, parent_id as parentId FROM subforums WHERE parent_id IS NULL");
+    } else {
+        stmt = db.prepare("SELECT id, title, url, parent_id as parentId FROM subforums WHERE parent_id = ?");
+    }
+    const subforums = await stmt.all(parentId) as Subforum[];
     return subforums;
 }
 
-export function getThreadsBySubforum(subforumUrl: string): Thread[] {
+export async function getThreadsBySubforum(subforumUrl: string): Promise<Thread[]> {
     const stmt = db.prepare(
-        "SELECT id, subforum_url, title, url, creator, created_at FROM threads WHERE subforum_url = ?"
+        "SELECT id, subforum_url as subforumUrl, title, url, creator, created_at as createdAt FROM threads WHERE subforum_url = ?"
     );
-    const threads = stmt.all(subforumUrl) as Thread[];
-    console.log(`${EMOJI_SUCCESS} Loaded ${threads.length} threads.`);
+     const threads = await stmt.all(subforumUrl) as Thread[];
     return threads;
 }
 
-export function getPostsByThread(threadUrl: string): Post[] {
+export async function getPostsByThread(threadUrl: string): Promise<Post[]> {
     const stmt = db.prepare(
-        "SELECT id, thread_url, username, comment, posted_at, user_url FROM posts WHERE thread_url = ? ORDER BY posted_at ASC"
+        "SELECT id, thread_url as threadUrl, username, comment, posted_at as postedAt, user_url as userUrl FROM posts WHERE thread_url = ? ORDER BY posted_at ASC"
     );
-    const posts = stmt.all(threadUrl) as Post[];
-    console.log(`${EMOJI_SUCCESS} Loaded ${posts.length} posts.`);
+    const posts = await stmt.all(threadUrl) as Post[];
     return posts;
 }
 
-export function insertSubforum(title: string, url: string): void {
+export async function getThreadsCountBySubforum(subforumUrl: string): Promise<number> {
+    const stmt = db.prepare("SELECT COUNT(*) as count FROM threads WHERE subforum_url = ?");
+    const result = await stmt.get(subforumUrl) as { count: number };
+    return result.count;
+}
+
+export async function getPostsCountBySubforum(subforumUrl: string): Promise<number> {
+    const stmt = db.prepare(`
+        SELECT COUNT(*) as count
+        FROM posts
+        INNER JOIN threads ON posts.thread_url = threads.url
+        WHERE threads.subforum_url = ?
+    `);
+    const result = await stmt.get(subforumUrl) as { count: number };
+    return result.count;
+}
+
+export async function getUsersCountBySubforum(subforumUrl: string): Promise<number> {
+    const stmt = db.prepare(`
+        SELECT COUNT(DISTINCT posts.username) as count
+        FROM posts
+        INNER JOIN threads ON posts.thread_url = threads.url
+        WHERE threads.subforum_url = ?
+    `);
+    const result = await stmt.get(subforumUrl) as { count: number };
+    return result.count;
+}
+
+export async function getUsersCountByThread(threadUrl: string): Promise<number> {
+     const stmt = db.prepare(`
+        SELECT COUNT(DISTINCT username) AS count FROM posts WHERE thread_url = ?
+    `);
+    const result = await stmt.get(threadUrl) as {count: number};
+    return result.count;
+}
+
+export async function getFilesByPostId(postId: number): Promise<File[]> {
+    const stmt = db.prepare("SELECT id, post_id as postId, filename, mime_type as mimeType, file_data as fileData FROM files WHERE post_id = ?");
+    return await stmt.all(postId) as File[];
+}
+
+
+export async function insertSubforum(title: string, url: string, parentId: number | null = null): Promise<Subforum> {
     try {
-        const stmt = db.prepare("INSERT OR IGNORE INTO subforums (title, url) VALUES (?, ?)");
-        stmt.run(title, url);
-        console.log(`${EMOJI_SUCCESS} Subforum processed: ${title}`);
+        const stmt = db.prepare("INSERT OR IGNORE INTO subforums (title, url, parent_id) VALUES (?, ?, ?)");
+        const result = stmt.run(title, url, parentId);
+        let id = result.lastInsertRowid;
+
+
+        if (typeof id !== 'number' || id === 0) {
+            const existingStmt = db.prepare("SELECT id, title, url, parent_id as parentId FROM subforums WHERE url = ?");
+            const existingSubforum = await existingStmt.get(url) as Subforum | undefined;
+
+            if (!existingSubforum) {
+                throw new Error(`Failed to insert subforum and could not retrieve existing ID for URL: ${url}`);
+            }
+            return existingSubforum;
+        }
+        return { id, title, url, parentId };
     } catch (error) {
         console.error(`${EMOJI_ERROR} Failed to process subforum:`, error);
         throw error;
@@ -149,7 +207,6 @@ export function insertThread(
             "INSERT OR IGNORE INTO threads (subforum_url, title, url, creator, created_at) VALUES (?, ?, ?, ?, ?)"
         );
         stmt.run(subforumUrl, title, url, creator, createdAt);
-        console.log(`${EMOJI_SUCCESS} Thread processed: ${title} (${createdAt})`);
     } catch (error) {
         console.error(`${EMOJI_ERROR} Failed to process thread:`, error);
         throw error;
@@ -169,7 +226,6 @@ export function insertPost(
         );
         const result = stmt.run(threadUrl, username, comment, postedAt, userUrl);
         trackUser(username, postedAt);
-        console.log(`${EMOJI_SUCCESS} Post processed from ${username} (${postedAt})`);
         return result.lastInsertRowid as number;
 
     } catch (error) {
@@ -182,19 +238,24 @@ function runWithArrayBuffer(stmt: Statement, ...params: any[]): ReturnType<State
     return stmt.run(...params);
 }
 
-export function insertFile(postId: number, filename: string, mimeType: string | null, fileData: ArrayBuffer): void {
+export async function insertFile(postId: number, filename: string, mimeType: string | null, fileData: ArrayBuffer): Promise<File> {
     try {
         const stmt = db.prepare(
             "INSERT INTO files (post_id, filename, mime_type, file_data) VALUES (?, ?, ?, ?)"
         );
-        runWithArrayBuffer(stmt, postId, filename, mimeType, fileData);
-        console.log(`${EMOJI_SUCCESS} File processed: ${filename}`);
+        const result = runWithArrayBuffer(stmt, postId, filename, mimeType, fileData);
+        const id = result.lastInsertRowid;
+
+        if (typeof id !== 'number') {
+            throw new Error("Failed to insert file and retrieve ID");
+        }
+        return { id, postId, filename, mimeType, fileData };
+
     } catch (error) {
         console.error(`${EMOJI_ERROR} Failed to process file:`, error);
         throw error;
     }
 }
-
 export function trackUser(username: string, postedAt: string): void {
     try {
         const stmt = db.prepare(`
@@ -214,9 +275,9 @@ export function getUserCount(): number {
     return (db.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number }).count;
 }
 
-export function closeDatabase(): void {
+export async function closeDatabase(): Promise<void> {
     if (db) {
-        db.close();
+        await db.close();
         console.log(`${EMOJI_SUCCESS} Database connection closed.`);
     }
 }

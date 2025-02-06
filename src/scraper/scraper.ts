@@ -17,10 +17,10 @@ import {
     EMOJI_INFO,
     type ScrapingStats,
     type FetchError,
-    type ForumStats
+    type ForumStats,
+    type Subforum
 } from '../types/types';
 import { askQuestion } from '../utils/readline';
-
 
 let stats: ScrapingStats = {
     subforums: 0,
@@ -151,51 +151,77 @@ function updatePercentages(): void {
     if (!stats.totals) return;
 
     stats.percentComplete = {
-         users: stats.totals.totalUsers === 0 ? 0 : Math.round((stats.users / stats.totals.totalUsers) * 100),
+        users: stats.totals.totalUsers === 0 ? 0 : Math.round((stats.users / stats.totals.totalUsers) * 100),
         threads: stats.totals.totalThreads === 0 ? 0 : Math.round((stats.threads / stats.totals.totalThreads) * 100),
         posts: stats.totals.totalPosts === 0 ? 0 : Math.round((stats.posts / stats.totals.totalPosts) * 100)
     };
 }
-async function scrapeSubforums(): Promise<void> {
-    const html = await fetchWithRetry(config.FORUM_URL);
+
+async function scrapeSubforums(url: string = config.FORUM_URL, parentId: number | null = null): Promise<void> {
+    if (config.TEST_MODE && stats.subforums >= (config.MAX_SUBFORUMS ?? Infinity)) {
+        return;
+    }
+
+    const html = await fetchWithRetry(url);
     if (!html) {
-        console.error(`${EMOJI_ERROR} Failed to fetch forum HTML.`);
+        console.error(`${EMOJI_ERROR} Failed to fetch forum HTML from ${url}.`);
         return;
     }
     const $ = cheerio.load(html);
 
-     // Correctly select ALL subforum links.
-     const subforumLinks = $('li.forumbit_post h2.forumtitle a');
+    // *** CORRECTED SELECTOR ***
+    const subforumListItems = $('ol#forums > li.forumbit_nopost > ol.childforum > li.forumbit_post h2.forumtitle > a');
 
-    console.log(`${EMOJI_INFO} Found ${subforumLinks.length} subforums`);
+    console.log(`${EMOJI_INFO} Found ${subforumListItems.length} subforums/child forums on ${url}`);
 
-    for (const element of subforumLinks.toArray()) {
-        const $link = $(element);
+    for (const element of subforumListItems.toArray()) {
+        // ... (rest of the function remains the same) ...
+         if (config.TEST_MODE && stats.subforums >= (config.MAX_SUBFORUMS ?? Infinity)) {
+            return;
+        }
+
+        const $listItem = $(element);
+		//The link is the element now. No need to find
+        const $link = $listItem;
         const title = $link.text().trim();
-        const href = $link.attr('href');
+        let href = $link.attr('href');
 
         if (!title || !href) {
-            console.log(`${EMOJI_WARN} Invalid forum title or href`);
+            console.log(`${EMOJI_WARN} Invalid forum title or href on ${url}`);
             continue;
         }
 
-        const url = new URL(href, config.FORUM_URL).href;
-        insertSubforum(title, url);
-        console.log(`${EMOJI_SUCCESS} Added subforum: ${title}`);
-        stats.subforums++;
+        const subforumUrl = new URL(href, url).href;
+
+        let subforumRecord: Subforum;
         try {
-            await scrapeSubforumThreads(url);
-            await delay(config.SUBFORUM_DELAY);
-        } catch (error){
-            console.error("Failed to scrape threads in subforum", error)
+            subforumRecord = await insertSubforum(title, subforumUrl, parentId);
+            console.log(`${EMOJI_SUCCESS} Added subforum: ${title} with parentId ${parentId}`);
+            stats.subforums++;
+        } catch (error) {
+            console.error(`${EMOJI_ERROR} Failed to insert subforum ${title}:`, error);
+            continue;
         }
+
+        try {
+           await scrapeSubforumThreads(subforumUrl);
+           await delay(config.SUBFORUM_DELAY);
+        } catch(error){
+            console.error(`${EMOJI_ERROR} Failed to scrape subforum threads.`, error)
+        }
+
+        await scrapeSubforums(subforumUrl, subforumRecord.id);
     }
 }
 
 async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
     let pageUrl: string = subforumUrl;
+    let pageCount = 0;
 
     while (pageUrl) {
+        if (config.TEST_MODE && pageCount >= (config.MAX_PAGES_PER_SUBFORUM ?? Infinity)) {
+            return;
+        }
         try {
             const html = await fetchWithRetry(pageUrl);
             if (!html) {
@@ -204,17 +230,20 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
             }
             const $ = cheerio.load(html);
 
-            // Correct thread selector:  Direct children of #threads.
             const threadRows = $("#threads > li.threadbit");
 
             console.log(`${EMOJI_INFO} Found ${threadRows.length} threads on page: ${pageUrl}`);
             stats.pagesProcessed++;
+            pageCount++;
 
+            let threadCount = 0;
             for (const threadRow of threadRows.toArray()) {
+                if (config.TEST_MODE && threadCount >= (config.MAX_THREADS_PER_SUBFORUM ?? Infinity)) {
+                    break;
+                }
                 try {
                     const $threadRow = $(threadRow);
 
-                    // Title selector: a with class title, inside an h3.
                     const titleLink = $threadRow.find('h3.threadtitle a.title');
                     const title = titleLink.text().trim();
                     const href = titleLink.attr('href');
@@ -226,12 +255,10 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
 
                     const threadUrl = new URL(href, config.FORUM_URL).href;
 
-                    // Author and Creation Date:  Get the entire "Started by" span content.
                     const authorDateSpan = $threadRow.find('.threadmeta .author span.label');
                     const authorDateText = authorDateSpan.text().trim();
 
-                    // Extract Author and Date using a regular expression.  Much cleaner!
-                    const authorMatch = authorDateText.match(/Started by\s*<a[^>]*>(.*?)<\/a>,\s*(.*)/) ||  authorDateText.match(/Started by\s*([^,]*),\s*(.*)/);
+                    const authorMatch = authorDateText.match(/Started by\s*<a[^>]*>(.*?)<\/a>,\s*(.*)/) || authorDateText.match(/Started by\s*([^,]*),\s*(.*)/);
 
                     let creator = "Unknown";
                     let createdAt = new Date().toISOString();
@@ -244,6 +271,7 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
                     insertThread(subforumUrl, title, threadUrl, creator, createdAt);
                     console.log(`${EMOJI_SUCCESS} Added thread: ${title} (${createdAt}) by ${creator}`);
                     stats.threads++;
+                    threadCount++;
 
                     await delay(config.DELAY_BETWEEN_REQUESTS);
 
@@ -252,11 +280,9 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
                 }
             }
 
-            // Pagination: Find the next page link. Use the div with id that contains "-pagenav-"
             let nextLink = $('div[id*="-pagenav-"] .pagination a').last().attr('href');
 
              if (!nextLink) {
-                //fallback
                 nextLink = $('a[rel="next"]').attr('href');
             }
             pageUrl = nextLink ? new URL(nextLink, config.FORUM_URL).href : '';
@@ -273,31 +299,34 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
 
 async function scrapeThreadPosts(threadUrl: string, allUsers: Set<string>): Promise<void> {
     let pageUrl: string = threadUrl;
+    let pageCount = 0;
 
     while (pageUrl) {
+        if(config.TEST_MODE && pageCount >= (config.MAX_PAGES_PER_THREAD ?? Infinity)) {
+          return;
+        }
         try {
             const html = await fetchWithRetry(pageUrl);
             const $ = cheerio.load(html);
-            const posts = $('.postcontainer');
+            const posts = $('li.postcontainer'); 
 
-            console.log(`${EMOJI_INFO} Found ${posts.length} posts`);
+            console.log(`${EMOJI_INFO} Found ${posts.length} posts on page ${pageUrl}`);
+            pageCount++;
 
+            let postCount = 0;
             for (const post of posts) {
+              if (config.TEST_MODE && postCount >= (config.MAX_POSTS_PER_THREAD ?? Infinity)) {
+                    break;
+                }
                 try {
                     const $post = $(post);
-                    const username = $post.find('.username').text().trim();
-                    const comment = $post.find('.postcontent').text().trim();
-                    const postedAt = $post.find('.postdate').text().trim() || new Date().toISOString();
 
-                    const userLink = $post.find('a.bigusername');
-                    let userUrl = '';
+                    const usernameElement = $post.find('.username strong');
+                    const username = usernameElement.text().trim();
+                    const userUrl =  new URL($post.find('a.username').attr('href') || '', config.FORUM_URL).href;
+                    const comment = $post.find('div[id^="post_message_"] blockquote.postcontent').text().trim();
+                    const postedAt = $post.find('div.posthead span.postdate span.date').text().trim() || new Date().toISOString();
 
-                    if (userLink.length > 0) {
-                      const href = userLink.attr('href');
-                      if (href) {
-                        userUrl = new URL(href, config.FORUM_URL).href;
-                      }
-                    }
 
                     if (username && comment && userUrl) {
                         const postId = insertPost(threadUrl, username, comment, postedAt, userUrl);
@@ -336,6 +365,7 @@ async function scrapeThreadPosts(threadUrl: string, allUsers: Set<string>): Prom
                     }
 
                     stats.posts++;
+                    postCount++;
                     updatePercentages();
                     if (stats.posts % 100 === 0) printProgress();
 
@@ -358,6 +388,14 @@ async function scrapeThreadPosts(threadUrl: string, allUsers: Set<string>): Prom
 }
 
 async function confirmScrape(): Promise<boolean> {
+     if (config.TEST_MODE) {
+        console.warn(`${EMOJI_WARN} TEST_MODE is enabled.  Scraping will be limited.`);
+        console.warn(`${EMOJI_WARN} Max Subforums: ${config.MAX_SUBFORUMS ?? 'Unlimited'}`);
+        console.warn(`${EMOJI_WARN} Max Threads per Subforum: ${config.MAX_THREADS_PER_SUBFORUM ?? 'Unlimited'}`);
+        console.warn(`${EMOJI_WARN} Max Posts per Thread: ${config.MAX_POSTS_PER_THREAD ?? 'Unlimited'}`);
+        console.warn(`${EMOJI_WARN} Max Pages per Subforum: ${config.MAX_PAGES_PER_SUBFORUM ?? 'Unlimited'}`);
+        console.warn(`${EMOJI_WARN} Max Pages per Thread: ${config.MAX_PAGES_PER_THREAD ?? 'Unlimited'}`);
+    }
     const answer = await askQuestion('Continue with scrape? (y/N) ');
     return answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes';
 }
@@ -379,7 +417,6 @@ async function main() {
         console.log(`${EMOJI_INFO} Getting forum statistics...`);
         stats.totals = await getForumStats();
 
-
         if (!await confirmScrape()) {
             console.log(`${EMOJI_INFO} Scraping cancelled.`);
             return;
@@ -388,15 +425,14 @@ async function main() {
         console.log(`${EMOJI_INFO} Starting forum scrape...`);
         await scrapeSubforums();
 
-        const subforums = getSubforums();
+        const subforums = await getSubforums();
         for (const subforum of subforums) {
-            const threads = getThreadsBySubforum(subforum.url);
+            const threads = await getThreadsBySubforum(subforum.url);
             for (const thread of threads) {
                 await scrapeThreadPosts(thread.url, allUsers);
                 await delay(config.DELAY_BETWEEN_REQUESTS);
             }
             await delay(config.SUBFORUM_DELAY);
-
         }
 
         console.log('\nFinal Statistics:');
@@ -413,4 +449,3 @@ async function main() {
 }
 
 main();
-

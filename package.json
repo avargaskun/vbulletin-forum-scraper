@@ -12,6 +12,7 @@
     "format:check": "prettier --check ."
   },
   "devDependencies": {
+    "@jimp/types": "^1.6.0",
     "@types/bun": "latest",
     "@typescript-eslint/eslint-plugin": "^6.13.1",
     "@typescript-eslint/parser": "^6.13.1",
@@ -25,8 +26,11 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@jimp/utils": "^1.6.0",
+    "boxen": "^8.0.1",
     "cheerio": "^1.0.0-rc.12",
     "dotenv": "^16.3.1",
+    "jimp": "^1.6.0",
     "node-fetch": "^3.3.2"
   },
   "engines": {

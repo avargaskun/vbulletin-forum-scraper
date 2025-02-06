@@ -1,17 +1,13 @@
-import * as dotenv from 'dotenv';
 import { dirname } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { type Config } from './types/types';
 
-dotenv.config();
-
-function getEnvVar(key: keyof Config, defaultValue: Config[keyof Config]): Config[keyof Config] {
+function getEnvVar(key: keyof Config, defaultValue: Config[keyof Config] | null = null): Config[keyof Config] | null {
     const value = process.env[key];
 
     if (value === undefined) {
-        if (defaultValue === undefined) {
-            console.error(`❌ ${key} is not defined in .env file and no default value is provided.`);
-            process.exit(1);
+        if (defaultValue === null) {
+          return null;
         }
         return defaultValue;
     }
@@ -56,4 +52,10 @@ export const config: Config = {
     RETRY_DELAY: Number(getEnvVar('RETRY_DELAY', 5000)),
     SUBFORUM_DELAY: Number(getEnvVar('SUBFORUM_DELAY', 10000)),
     DOWNLOAD_FILES: Boolean(getEnvVar('DOWNLOAD_FILES', false)),
+    TEST_MODE: Boolean(getEnvVar('TEST_MODE', false)),
+    MAX_SUBFORUMS: getEnvVar('MAX_SUBFORUMS', null) as number | null,
+    MAX_THREADS_PER_SUBFORUM: getEnvVar('MAX_THREADS_PER_SUBFORUM', null) as number | null,
+    MAX_POSTS_PER_THREAD: getEnvVar('MAX_POSTS_PER_THREAD', null) as number | null,
+    MAX_PAGES_PER_SUBFORUM: getEnvVar('MAX_PAGES_PER_SUBFORUM', null) as number | null,
+    MAX_PAGES_PER_THREAD: getEnvVar('MAX_PAGES_PER_THREAD', null) as number | null,
 };

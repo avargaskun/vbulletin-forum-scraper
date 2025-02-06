@@ -7,33 +7,35 @@ export interface Subforum {
     id: number;
     title: string;
     url: string;
+    parentId: number | null;
 }
 
 export interface Thread {
     id: number;
-    subforum_url: string;
+    subforumUrl: string;
     title: string;
     url: string;
     creator: string;
-    created_at: string;
+    createdAt: string;
 }
 
 export interface Post {
     id: number;
-    thread_url: string;
+    threadUrl: string;
     username: string;
     comment: string;
-    posted_at: string;
-    user_url: string;
+    postedAt: string;
+    userUrl: string;
 }
 
-export interface File { // Renamed
+export interface File {
     id: number;
-    post_id: number;
+    postId: number;
     filename: string;
-    mime_type: string | null;
-    file_data: ArrayBuffer;
+    mimeType: string | null;
+    fileData: ArrayBuffer;
 }
+
 export interface ForumStats {
   totalThreads: number;
   totalPosts: number;
@@ -54,6 +56,7 @@ export interface ScrapingStats {
     },
     totals?: ForumStats
 }
+
 export interface FetchError extends Error {
     type: 'network' | 'http' | 'empty';
     status?: number;
@@ -69,4 +72,10 @@ export interface Config {
     RETRY_DELAY: number;
     SUBFORUM_DELAY: number;
     DOWNLOAD_FILES: boolean;
+    TEST_MODE: boolean;
+    MAX_SUBFORUMS: number | null;
+    MAX_THREADS_PER_SUBFORUM: number | null;
+    MAX_POSTS_PER_THREAD: number | null;
+    MAX_PAGES_PER_SUBFORUM: number | null;
+    MAX_PAGES_PER_THREAD: number | null;
 }
