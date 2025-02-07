@@ -9,7 +9,10 @@
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "generate": "bun run src/frontend/html-generator.ts",
+    "preview": "bun run src/frontend/server.ts",
+    "build": "bun run generate && bun run preview"
   },
   "devDependencies": {
     "@jimp/types": "^1.6.0",
