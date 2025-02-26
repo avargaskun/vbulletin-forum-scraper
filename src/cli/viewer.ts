@@ -16,6 +16,7 @@ import { EMOJI_SUCCESS, EMOJI_INFO, EMOJI_ERROR, EMOJI_WARN, type Subforum, type
 import { Jimp } from 'jimp';
 import { intToRGBA } from '@jimp/utils';
 import boxen from 'boxen';
+import { logInfo } from '../utils/logging';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -301,6 +302,7 @@ async function main(): Promise<void> {
         console.error(`${EMOJI_ERROR} Error:`, error);
     } finally {
         await closeDatabase();
+        process.exit(1);
     }
 }
 

@@ -39,11 +39,11 @@ export async function initialiseDatabase(): Promise<void> {
         const answer = await askQuestion('Database exists. Delete and recreate? (y/N) ');
         if (answer.trim().toLowerCase() === 'y') {
             await unlink(config.DATABASE_PATH);
-            logError(`${EMOJI_SUCCESS} Database reset.`);
+            logInfo(`${EMOJI_SUCCESS} Database reset.`);
             db = new Database(config.DATABASE_PATH, { create: true, readwrite: true });
             await setupDatabase(); // Only setup if deleting/recreating
         } else {
-            logError(`${EMOJI_INFO} Using existing database.`);
+            logInfo(`${EMOJI_INFO} Using existing database.`);
             getDatabase(); //  Get connection, even if not deleting
         }
     } else {
@@ -309,7 +309,7 @@ export function getUserCount(): number {
 export async function closeDatabase(): Promise<void> {
     if (db) {
         await db.close();
-        logError(`${EMOJI_SUCCESS} Database connection closed.`);
+        logInfo(`${EMOJI_SUCCESS} Database connection closed.`);
         db = null;
     }
 }
@@ -323,7 +323,7 @@ export async function loadScrapedUrls(): Promise<void> {
         const results = currentDB.query("SELECT url FROM scraped_urls").all() as { url: string }[];
         scrapedUrls.clear(); // Clear existing set first
         results.forEach(row => scrapedUrls.add(row.url));
-        logError(`${EMOJI_INFO} Loaded ${scrapedUrls.size} previously scraped URLs`);
+        logInfo(`${EMOJI_INFO} Loaded ${scrapedUrls.size} previously scraped URLs`);
     } catch (error) {
         logError(`${EMOJI_ERROR} Failed to load scraped URLs:`, error as Error);
     }

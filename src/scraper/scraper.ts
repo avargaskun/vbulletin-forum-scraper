@@ -541,6 +541,7 @@ await saveScrapingState(null, null, true);
         logError('Fatal error', error as Error);
     } finally {
         closeDatabase();
+        process.exit(1);
     }
 }
 
