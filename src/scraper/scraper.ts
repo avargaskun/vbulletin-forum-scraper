@@ -418,10 +418,10 @@ async function main() {
         logInfo('Getting forum statistics...');
         stats.totals = await getForumStats();
 
-        if (!await confirmScrape()) {
-            logInfo('Scraping cancelled.');
-            return;
-        }
+        // if (!await confirmScrape()) {
+        //     logInfo('Scraping cancelled.');
+        //     return;
+        // }
 
         logInfo('Starting forum scrape...');
         await scrapeSubforums();
