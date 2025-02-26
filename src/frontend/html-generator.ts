@@ -8,6 +8,7 @@ import ThreadPage from './pages/ThreadPage';
 const TIMEOUT_MS = 30000;
 const MAX_RETRIES = 3;
 
+// Helper functions
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -46,23 +47,43 @@ async function retryOperation<T>(
     throw lastError;
 }
 
-async function generatePage(
-    generator: (params: { subforum: Subforum; thread?: Thread }) => Promise<string>,
-    params: { subforum: Subforum; thread?: Thread },
+// Create specific helper functions for subforum and thread pages to avoid type issues
+async function generateSubforumPage(
+    subforum: Subforum,
     outputPath: string
 ): Promise<boolean> {
     try {
-        const content = await retryOperation(() => generator(params));
+        const content = await retryOperation(() => SubforumPage({ subforum }));
         await fs.writeFile(outputPath, content);
+        console.log(`Generated page for subforum: ${subforum.title}`);
         return true;
     } catch (error) {
-        console.error(`Failed to generate page for:`, params, error);
+        console.error(`Failed to generate page for subforum:`, subforum, error);
         await fs.appendFile('failed_pages.log',
-            `${new Date().toISOString()}\t${outputPath}\t${JSON.stringify(params)}\n`);
+            `${new Date().toISOString()}\t${outputPath}\tSubforum:${subforum.title}\n`);
         return false;
     }
 }
 
+async function generateThreadPage(
+    subforum: Subforum,
+    thread: Thread,
+    outputPath: string
+): Promise<boolean> {
+    try {
+        const content = await retryOperation(() => ThreadPage({ subforum, thread }));
+        await fs.writeFile(outputPath, content);
+        console.log(`Generated page for thread: ${thread.title}`);
+        return true;
+    } catch (error) {
+        console.error(`Failed to generate page for thread:`, thread, error);
+        await fs.appendFile('failed_pages.log',
+            `${new Date().toISOString()}\t${outputPath}\tThread:${thread.title}\n`);
+        return false;
+    }
+}
+
+// Main HTML generation function
 async function generateHTML(): Promise<void> {
     await db.getDatabase();
     const distDir = path.join(process.cwd(), 'dist');
@@ -73,50 +94,50 @@ async function generateHTML(): Promise<void> {
         const subforumDir = path.join(distDir, subforum.url.replace(/[^a-zA-Z0-9]/g, '_'));
         await fs.mkdir(subforumDir, { recursive: true });
 
-        await generatePage(
-            SubforumPage,
-            { subforum },
+        // Generate subforum page
+        await generateSubforumPage(
+            subforum,
             path.join(distDir, `${subforum.url.replace(/[^a-zA-Z0-9]/g, '_')}.html`)
-        ).then(success => {
-            if (success) console.log(`Generated page for subforum: ${subforum.title}`);
-        });
+        );
 
         const [childSubforums, threads] = await Promise.all([
             db.getSubforums(subforum.id),
             db.getThreadsBySubforum(subforum.url)
         ]);
 
-        await Promise.all([
-            ...childSubforums.map(async childSubforum => {
-                await generatePage(
-                    SubforumPage,
-                    { subforum: childSubforum },
-                    path.join(distDir, `${childSubforum.url.replace(/[^a-zA-Z0-9]/g, '_')}.html`)
-                ).then(success => {
-                    if (success) console.log(`Generated page for subforum: ${childSubforum.title}`);
-                });
+        // Process child subforums
+        for (const childSubforum of childSubforums) {
+            await generateSubforumPage(
+                childSubforum,
+                path.join(distDir, `${childSubforum.url.replace(/[^a-zA-Z0-9]/g, '_')}.html`)
+            );
 
-                const childThreads = await db.getThreadsBySubforum(childSubforum.url);
-                return Promise.all(childThreads.map(thread =>
-                    generatePage(
-                        ThreadPage,
-                        { subforum: childSubforum, thread },
+            const childThreads = await db.getThreadsBySubforum(childSubforum.url);
+
+            // Generate thread pages for child subforums
+            await Promise.all(
+                childThreads.map(thread =>
+                    generateThreadPage(
+                        childSubforum,
+                        thread,
                         path.join(subforumDir, `${thread.url.replace(/[^a-zA-Z0-9]/g, '_')}.html`)
-                    ).then(success => {
-                        if (success) console.log(`Generated page for thread: ${thread.title}`);
-                    })
-                ));
-            }),
-            ...threads.map(thread =>
-                generatePage(
-                    ThreadPage,
-                    { subforum, thread },
+                    )
+                )
+            );
+        }
+
+        // Generate thread pages for main subforum
+        await Promise.all(
+            threads.map(thread =>
+                generateThreadPage(
+                    subforum,
+                    thread,
                     path.join(subforumDir, `${thread.url.replace(/[^a-zA-Z0-9]/g, '_')}.html`)
-                ).then(success => {
-                    if (success) console.log(`Generated page for thread: ${thread.title}`);
-                })
+                )
             )
-        ]);
+        );
     }
     console.log("HTML generation completed.");
 }
+
+export default generateHTML;

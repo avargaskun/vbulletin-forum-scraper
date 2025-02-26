@@ -16,7 +16,10 @@ import {
 import { logError, logInfo } from '../utils/logging';
 
 let db: Database | null = null;
+let scrapedUrls = new Set<string>();
+let downloadedFiles = new Set<string>();
 
+// Database connection and setup functions
 export function getDatabase(): Database {
     if (!db) {
         db = new Database(config.DATABASE_PATH, {
@@ -34,22 +37,23 @@ export function getDatabase(): Database {
     return db;
 }
 
-export async function initialiseDatabase(): Promise<void> {
-    if (existsSync(config.DATABASE_PATH)) {
-        const answer = await askQuestion('Database exists. Delete and recreate? (y/N) ');
-        if (answer.trim().toLowerCase() === 'y') {
-            await unlink(config.DATABASE_PATH);
-            logInfo(`${EMOJI_SUCCESS} Database reset.`);
-            db = new Database(config.DATABASE_PATH, { create: true, readwrite: true });
-            await setupDatabase(); // Only setup if deleting/recreating
-        } else {
-            logInfo(`${EMOJI_INFO} Using existing database.`);
-            getDatabase(); //  Get connection, even if not deleting
-        }
-    } else {
-        getDatabase();  // Create DB file if it doesn't exist
-        await setupDatabase(); // And create tables
+function validateTables(): boolean {
+    const currentDB = getDatabase();
+    const tables = [
+        'subforums', 'threads', 'posts', 'users', 'files',
+        'downloaded_files', 'scraped_urls', 'scraping_state'
+    ];
+    const existingTables = currentDB.query("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[];
+    const existingTableNames = new Set(existingTables.map(t => t.name));
+    const missingTables = tables.filter(table => !existingTableNames.has(table));
+
+    if (missingTables.length > 0) {
+        logError(`${EMOJI_ERROR} Missing required tables: ${missingTables.join(', ')}`);
+        return false;
     }
+
+    logInfo(`${EMOJI_SUCCESS} Database tables validated.`);
+    return true;
 }
 
 export async function setupDatabase(): Promise<void> {
@@ -127,25 +131,33 @@ export async function setupDatabase(): Promise<void> {
     }
 }
 
-function validateTables(): boolean {
-    const currentDB = getDatabase();
-    const tables = [
-        'subforums', 'threads', 'posts', 'users', 'files',
-        'downloaded_files', 'scraped_urls', 'scraping_state'
-    ];
-    const existingTables = currentDB.query("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[];
-    const existingTableNames = new Set(existingTables.map(t => t.name));
-    const missingTables = tables.filter(table => !existingTableNames.has(table));
-
-    if (missingTables.length > 0) {
-        logError(`${EMOJI_ERROR} Missing required tables: ${missingTables.join(', ')}`);
-        return false;
+export async function initialiseDatabase(): Promise<void> {
+    if (existsSync(config.DATABASE_PATH)) {
+        const answer = await askQuestion('Database exists. Delete and recreate? (y/N) ');
+        if (answer.trim().toLowerCase() === 'y') {
+            await unlink(config.DATABASE_PATH);
+            logError(`${EMOJI_SUCCESS} Database reset.`);
+            db = new Database(config.DATABASE_PATH, { create: true, readwrite: true });
+            await setupDatabase(); // Only setup if deleting/recreating
+        } else {
+            logError(`${EMOJI_INFO} Using existing database.`);
+            getDatabase(); //  Get connection, even if not deleting
+        }
+    } else {
+        getDatabase();  // Create DB file if it doesn't exist
+        await setupDatabase(); // And create tables
     }
-
-    logInfo(`${EMOJI_SUCCESS} Database tables validated.`);
-    return true;
 }
 
+export async function closeDatabase(): Promise<void> {
+    if (db) {
+        await db.close();
+        logError(`${EMOJI_SUCCESS} Database connection closed.`);
+        db = null;
+    }
+}
+
+// Query functions
 export async function getSubforums(parentId: number | null = null): Promise<Subforum[]> {
     const currentDB = getDatabase();
     let stmt: Statement;
@@ -215,6 +227,12 @@ export async function getFilesByPostId(postId: number): Promise<File[]> {
     return await stmt.all(postId) as File[];
 }
 
+export function getUserCount(): number {
+    const currentDB = getDatabase();
+    return (currentDB.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number }).count;
+}
+
+// Insert functions
 export async function insertSubforum(title: string, url: string, parentId: number | null = null): Promise<Subforum> {
     const currentDB = getDatabase();
     try {
@@ -245,6 +263,22 @@ export function insertThread(subforumUrl: string, title: string, url: string, cr
         stmt.run(subforumUrl, title, url, creator, createdAt);
     } catch (error) {
         logError(`${EMOJI_ERROR} Failed to process thread:`, error as Error);
+        throw error;
+    }
+}
+
+export function trackUser(username: string, postedAt: string): void {
+    const currentDB = getDatabase();
+    try {
+        const stmt = currentDB.prepare(`
+            INSERT INTO users (username, first_seen, post_count)
+            VALUES (?, ?, 1)
+            ON CONFLICT(username) DO UPDATE SET
+            post_count = post_count + 1
+        `);
+        stmt.run(username, postedAt);
+    } catch (error) {
+        logError(`${EMOJI_ERROR} Failed to track user:`, error as Error);
         throw error;
     }
 }
@@ -285,45 +319,14 @@ export async function insertFile(postId: number, filename: string, mimeType: str
     }
 }
 
-export function trackUser(username: string, postedAt: string): void {
-    const currentDB = getDatabase();
-    try {
-        const stmt = currentDB.prepare(`
-            INSERT INTO users (username, first_seen, post_count)
-            VALUES (?, ?, 1)
-            ON CONFLICT(username) DO UPDATE SET
-            post_count = post_count + 1
-        `);
-        stmt.run(username, postedAt);
-    } catch (error) {
-        logError(`${EMOJI_ERROR} Failed to track user:`, error as Error);
-        throw error;
-    }
-}
-
-export function getUserCount(): number {
-    const currentDB = getDatabase();
-    return (currentDB.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number }).count;
-}
-
-export async function closeDatabase(): Promise<void> {
-    if (db) {
-        await db.close();
-        logInfo(`${EMOJI_SUCCESS} Database connection closed.`);
-        db = null;
-    }
-}
-
-let scrapedUrls = new Set<string>();
-let downloadedFiles = new Set<string>();
-
+// Scraping state management functions
 export async function loadScrapedUrls(): Promise<void> {
     const currentDB = getDatabase();
     try {
         const results = currentDB.query("SELECT url FROM scraped_urls").all() as { url: string }[];
         scrapedUrls.clear(); // Clear existing set first
         results.forEach(row => scrapedUrls.add(row.url));
-        logInfo(`${EMOJI_INFO} Loaded ${scrapedUrls.size} previously scraped URLs`);
+        logError(`${EMOJI_INFO} Loaded ${scrapedUrls.size} previously scraped URLs`);
     } catch (error) {
         logError(`${EMOJI_ERROR} Failed to load scraped URLs:`, error as Error);
     }
@@ -419,13 +422,6 @@ export async function markFileDownloaded(fileUrl: string, postId: number): Promi
     }
 }
 
-/**
- * Saves the current scraping state to the database
- * @param lastSubforumUrl The URL of the last subforum being processed, or null if complete
- * @param lastThreadUrl The URL of the last thread being processed, or null if all threads in the subforum are complete
- * @param completed Whether scraping is completed
- * @returns Promise that resolves when the state has been saved
- */
 export async function saveScrapingState(
     lastSubforumUrl: string | null,
     lastThreadUrl: string | null,

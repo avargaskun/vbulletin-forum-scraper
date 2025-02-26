@@ -2,10 +2,9 @@ import type { Subforum, Thread } from '../../types/types';
 import PostList from '../components/PostList';
 import * as db from '../../database/index';
 
-
-interface ThreadPageProps {
+export interface ThreadPageProps {
   subforum: Subforum;
-  thread: Thread;
+  thread: Thread;  // thread is required
 }
 
 export default async function ThreadPage({ subforum, thread }: ThreadPageProps) {

@@ -16,13 +16,27 @@ import { EMOJI_SUCCESS, EMOJI_INFO, EMOJI_ERROR, EMOJI_WARN, type Subforum, type
 import { Jimp } from 'jimp';
 import { intToRGBA } from '@jimp/utils';
 import boxen from 'boxen';
-import { logInfo } from '../utils/logging';
 
 const ITEMS_PER_PAGE = 10;
 
+// Helper Functions
 function clearConsole(): void {
     console.clear();
     process.stdout.write('\x1Bc');
+}
+
+function formatDate(dateStr: string): string {
+    try {
+        return new Date(dateStr).toLocaleString('en-GB', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    } catch {
+        return dateStr;
+    }
 }
 
 async function showMenu(prompt: string, options: string[]): Promise<number> {
@@ -46,20 +60,6 @@ async function showMenu(prompt: string, options: string[]): Promise<number> {
         }
     } finally {
         rl.close();
-    }
-}
-
-function formatDate(dateStr: string): string {
-    try {
-        return new Date(dateStr).toLocaleString('en-GB', {
-            day: 'numeric',
-            month: 'short',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    } catch {
-        return dateStr;
     }
 }
 
@@ -106,72 +106,82 @@ async function imageToAscii(imageBuffer: ArrayBuffer, width: number = 80): Promi
     }
 }
 
-async function browseSubforums(parentId: number | null = null, page: number = 1): Promise<void> {
+// Main browsing functions
+async function viewThread(threadUrl: string, page: number = 1, subforumUrl: string | null = null): Promise<void> {
     clearConsole();
-    console.log(boxen(`${EMOJI_INFO} Browsing Subforums:`, {padding: 1, margin: 1, borderStyle: 'double'}));
+    console.log(boxen(`${EMOJI_INFO} Viewing Thread:`, {padding: 1, margin: 1, borderStyle: 'double'}));
 
-    const subforums: Subforum[] = await getSubforums(parentId); // Use Subforum type
-    if (subforums.length === 0) {
-        console.log(`${EMOJI_WARN} No subforums found.`);
-        const rl = readline.createInterface({ input, output });
-        try {
-            await rl.question(`${EMOJI_INFO} Press Enter to exit...`);
-        } finally {
-            rl.close();
-        }
-        return;
-    }
-
-    const startIdx = (page - 1) * ITEMS_PER_PAGE;
-    const endIdx = startIdx + ITEMS_PER_PAGE;
-    const pageSubforums: Subforum[] = subforums.slice(startIdx, endIdx); // Use Subforum type
-
-    for (const [index, subforum] of pageSubforums.entries()) {
-        const threadCount = parentId === null ? await getThreadsCountBySubforum(subforum.url) : 0;
-        const childSubforums = await getSubforums(subforum.id);
-        const childCount = childSubforums.length;
-
-        let diagnosticString = `${startIdx + index + 1}. ${subforum.title} `;
-        if(parentId === null){
-             diagnosticString += `(🧵 ${threadCount})`;
-        }
-        if (childCount > 0) {
-            diagnosticString += ` (⭐ ${childCount})`;
-        }
-        console.log(diagnosticString);
-    }
-
-
-    const options = pageSubforums.map((subforum) => subforum.title);
-
-    if (page > 1) options.push('Previous Page');
-    if (endIdx < subforums.length) options.push('Next Page');
-    options.push('Exit');
-
-    const choice = await showMenu('Select a subforum:', options);
-     if (choice === -1 || options[choice - 1] === 'Exit') {
-        return;
-    }
-
-    if (options[choice - 1] === 'Previous Page') {
-        await browseSubforums(parentId, page - 1);
-    } else if (options[choice - 1] === 'Next Page') {
-        await browseSubforums(parentId, page + 1);
+    const posts: Post[] = await getPostsByThread(threadUrl);
+    if (posts.length === 0) {
+        console.log(`${EMOJI_WARN} No posts found.`);
     } else {
-        const selectedSubforum = pageSubforums[choice - 1];
-        const hasChildren = (await getSubforums(selectedSubforum.id)).length > 0;
-        if (hasChildren) {
-            await browseSubforums(selectedSubforum.id);
-        } else {
-            await browseThreads(selectedSubforum.url);
+        const startIdx = (page - 1) * ITEMS_PER_PAGE;
+        const endIdx = startIdx + ITEMS_PER_PAGE;
+        const pagePosts: Post[] = posts.slice(startIdx, endIdx);
+
+        const userCount = await getUsersCountByThread(threadUrl);
+        const lastPost = posts.length > 0 ? formatDate(posts[posts.length - 1].postedAt) : 'N/A';
+
+        console.log(`${EMOJI_INFO} Thread Stats: 👤 ${userCount}, 👀 Last Post: ${lastPost}\n`);
+
+        for (const post of pagePosts) {
+            console.log(`\n🗨️  ${post.username} (${formatDate(post.postedAt)}):`);
+            console.log(post.comment);
+
+            const files: File[] = await getFilesByPostId(post.id);
+            for (const file of files) {
+                if (file.mimeType?.startsWith('image')) {
+                    const ascii = await imageToAscii(file.fileData);
+                    console.log(ascii);
+                } else {
+                    console.log(`  📎 Attached file: ${file.filename} (${file.mimeType || 'Unknown type'})`);
+                }
+            }
+
+            console.log('-'.repeat(50));
         }
+
+        if (posts.length > ITEMS_PER_PAGE) {
+            console.log(`\nShowing posts ${startIdx + 1}-${Math.min(endIdx, posts.length)} of ${posts.length}`);
+
+            if (page > 1) console.log('(P) Previous Page');
+            if (endIdx < posts.length) console.log('(N) Next Page');
+        }
+    }
+
+    const rl = readline.createInterface({ input, output });
+    try {
+        let prompt = `\n${EMOJI_SUCCESS} Press Enter to return to thread list, P for previous page, N for next page`;
+        if (subforumUrl) {
+            prompt += ", B to go back to subforum";
+        }
+        const answer = await rl.question(`${prompt}: `);
+
+        if (answer.toLowerCase() === 'p' && page > 1) {
+            await viewThread(threadUrl, page - 1, subforumUrl);
+        } else if (answer.toLowerCase() === 'n' && (page * ITEMS_PER_PAGE) < posts.length) {
+            await viewThread(threadUrl, page + 1, subforumUrl);
+        } else if (answer.toLowerCase() === 'b' && subforumUrl) {
+            await browseThreads(subforumUrl);
+        } else {
+            const threads = await getThreadsBySubforum(subforumUrl ? subforumUrl : '');
+            if (threads) {
+                const selectedThread = threads.find(thread => thread.url === threadUrl);
+                if (selectedThread) {
+                    await browseThreads(selectedThread.subforumUrl);
+                }
+            }
+        }
+    } finally {
+        rl.close();
     }
 }
+
 async function browseThreads(subforumUrl: string, page: number = 1): Promise<void> {
     clearConsole();
     console.log(boxen(`${EMOJI_INFO} Browsing Threads:`, {padding: 1, margin: 1, borderStyle: 'double'}));
 
-    const threads: Thread[] = await getThreadsBySubforum(subforumUrl); // Use Thread type
+    const threads: Thread[] = await getThreadsBySubforum(subforumUrl);
     if (threads.length === 0) {
         console.log(`${EMOJI_WARN} No threads found in this subforum.`);
         const rl = readline.createInterface({ input, output });
@@ -185,7 +195,7 @@ async function browseThreads(subforumUrl: string, page: number = 1): Promise<voi
 
     const startIdx = (page - 1) * ITEMS_PER_PAGE;
     const endIdx = startIdx + ITEMS_PER_PAGE;
-    const pageThreads: Thread[] = threads.slice(startIdx, endIdx); // Use Thread type
+    const pageThreads: Thread[] = threads.slice(startIdx, endIdx);
 
     const [postCount, userCount] = await Promise.all([
         getPostsCountBySubforum(subforumUrl),
@@ -223,77 +233,68 @@ async function browseThreads(subforumUrl: string, page: number = 1): Promise<voi
     }
 }
 
-async function viewThread(threadUrl: string, page: number = 1, subforumUrl: string | null = null): Promise<void> {
+async function browseSubforums(parentId: number | null = null, page: number = 1): Promise<void> {
     clearConsole();
-    console.log(boxen(`${EMOJI_INFO} Viewing Thread:`, {padding: 1, margin: 1, borderStyle: 'double'}));
+    console.log(boxen(`${EMOJI_INFO} Browsing Subforums:`, {padding: 1, margin: 1, borderStyle: 'double'}));
 
-    const posts: Post[] = await getPostsByThread(threadUrl); // Use Post type
-    if (posts.length === 0) {
-        console.log(`${EMOJI_WARN} No posts found.`);
-    } else {
-        const startIdx = (page - 1) * ITEMS_PER_PAGE;
-        const endIdx = startIdx + ITEMS_PER_PAGE;
-        const pagePosts: Post[] = posts.slice(startIdx, endIdx); // Use Post type
-
-        const userCount = await getUsersCountByThread(threadUrl);
-        const lastPost = posts.length > 0 ? formatDate(posts[posts.length - 1].postedAt) : 'N/A';
-
-         console.log(`${EMOJI_INFO} Thread Stats: 👤 ${userCount}, 👀 Last Post: ${lastPost}\n`);
-
-        for (const post of pagePosts) {
-            console.log(`\n🗨️  ${post.username} (${formatDate(post.postedAt)}):`);
-            console.log(post.comment);
-
-            const files: File[] = await getFilesByPostId(post.id); // Use File type
-            for (const file of files) {
-                if (file.mimeType?.startsWith('image')) {
-                    const ascii = await imageToAscii(file.fileData);
-                    console.log(ascii);
-                } else {
-                    console.log(`  📎 Attached file: ${file.filename} (${file.mimeType || 'Unknown type'})`);
-                }
-            }
-
-            console.log('-'.repeat(50));
+    const subforums: Subforum[] = await getSubforums(parentId);
+    if (subforums.length === 0) {
+        console.log(`${EMOJI_WARN} No subforums found.`);
+        const rl = readline.createInterface({ input, output });
+        try {
+            await rl.question(`${EMOJI_INFO} Press Enter to exit...`);
+        } finally {
+            rl.close();
         }
-
-        if (posts.length > ITEMS_PER_PAGE) {
-            console.log(`\nShowing posts ${startIdx + 1}-${Math.min(endIdx, posts.length)} of ${posts.length}`);
-
-            if (page > 1) console.log('(P) Previous Page');
-            if (endIdx < posts.length) console.log('(N) Next Page');
-        }
+        return;
     }
 
-    const rl = readline.createInterface({ input, output });
-    try {
-        let prompt = `\n${EMOJI_SUCCESS} Press Enter to return to thread list, P for previous page, N for next page`;
-        if (subforumUrl) {
-            prompt += ", B to go back to subforum";
-        }
-        const answer = await rl.question(`${prompt}: `);
+    const startIdx = (page - 1) * ITEMS_PER_PAGE;
+    const endIdx = startIdx + ITEMS_PER_PAGE;
+    const pageSubforums: Subforum[] = subforums.slice(startIdx, endIdx);
 
-        if (answer.toLowerCase() === 'p' && page > 1) {
-            await viewThread(threadUrl, page - 1, subforumUrl);
-        } else if (answer.toLowerCase() === 'n' && (page * ITEMS_PER_PAGE) < posts.length) {
-            await viewThread(threadUrl, page + 1, subforumUrl);
-        } else if (answer.toLowerCase() === 'b' && subforumUrl) {
-            await browseThreads(subforumUrl);
+    for (const [index, subforum] of pageSubforums.entries()) {
+        const threadCount = parentId === null ? await getThreadsCountBySubforum(subforum.url) : 0;
+        const childSubforums = await getSubforums(subforum.id);
+        const childCount = childSubforums.length;
+
+        let diagnosticString = `${startIdx + index + 1}. ${subforum.title} `;
+        if (parentId === null) {
+             diagnosticString += `(🧵 ${threadCount})`;
         }
-          else {
-            const threads = await getThreadsBySubforum(subforumUrl ? subforumUrl : '');
-            if(threads){
-                const selectedThread = (threads).find(thread => thread.url === threadUrl);
-                 if (selectedThread) {
-                    await browseThreads(selectedThread.subforumUrl);
-                 }
-            }
+        if (childCount > 0) {
+            diagnosticString += ` (⭐ ${childCount})`;
         }
-    } finally {
-        rl.close();
+        console.log(diagnosticString);
+    }
+
+    const options = pageSubforums.map((subforum) => subforum.title);
+
+    if (page > 1) options.push('Previous Page');
+    if (endIdx < subforums.length) options.push('Next Page');
+    options.push('Exit');
+
+    const choice = await showMenu('Select a subforum:', options);
+    if (choice === -1 || options[choice - 1] === 'Exit') {
+        return;
+    }
+
+    if (options[choice - 1] === 'Previous Page') {
+        await browseSubforums(parentId, page - 1);
+    } else if (options[choice - 1] === 'Next Page') {
+        await browseSubforums(parentId, page + 1);
+    } else {
+        const selectedSubforum = pageSubforums[choice - 1];
+        const hasChildren = (await getSubforums(selectedSubforum.id)).length > 0;
+        if (hasChildren) {
+            await browseSubforums(selectedSubforum.id);
+        } else {
+            await browseThreads(selectedSubforum.url);
+        }
     }
 }
 
+// Main entry point
 async function main(): Promise<void> {
     await setupDatabase();
     try {
@@ -302,7 +303,6 @@ async function main(): Promise<void> {
         console.error(`${EMOJI_ERROR} Error:`, error);
     } finally {
         await closeDatabase();
-        process.exit(1);
     }
 }
 
