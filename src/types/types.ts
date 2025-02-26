@@ -50,7 +50,7 @@ export interface ScrapingStats {
     pagesProcessed: number;
     startTime: Date;
     binariesDownloaded: number;
-    binariesFailed: number;     
+    binariesFailed: number;
     percentComplete?: {
         threads: number;
         posts: number;
@@ -80,4 +80,11 @@ export interface Config {
     MAX_POSTS_PER_THREAD: number | null;
     MAX_PAGES_PER_SUBFORUM: number | null;
     MAX_PAGES_PER_THREAD: number | null;
+}
+
+export interface ScrapingState {
+    lastScrapedSubforum: string | null;
+    lastScrapedThread: string | null;
+    lastUpdated: string;
+    completed: boolean;
 }

@@ -8,7 +8,8 @@ import {
     insertFile,
     getSubforums,
     getThreadsBySubforum,
-    closeDatabase
+    closeDatabase,
+    getScrapingState
 } from '../database';
 import type {
     ScrapingStats,
@@ -103,6 +104,11 @@ async function fetchWithRetry(url: string): Promise<string> {
         lastError?.type || 'network',
         `All ${config.MAX_RETRIES} attempts failed. Last error: ${lastError?.message || 'Unknown error'}`
     );
+}
+
+async function wasScrapingCompleted(): Promise<boolean> {
+    const state = await getScrapingState();
+    return state.completed;
 }
 
 async function getForumStats(): Promise<ForumStats> {
@@ -410,31 +416,99 @@ async function main() {
             users: 0,
             pagesProcessed: 0,
             startTime: new Date(),
-            binariesDownloaded: 0, // Initialize new fields
+            binariesDownloaded: 0,
             binariesFailed: 0,
         };
 
         await initialiseDatabase();
+
+// Load existing scraped URLs and downloaded files from database
+await loadScrapedUrls();
+await loadDownloadedFiles();
+
+// Check scraping state
+const scrapeState = await getScrapingState();
+const wasCompleted = await wasScrapingCompleted();
+
+if (wasCompleted) {
+    const resetAnswer = await askQuestion('Previous scrape was completed. Reset scraping state? (y/N) ');
+    if (resetAnswer.toLowerCase() === 'y') {
+        await resetScrapingState();
+    } else {
+        logInfo('Scraping was already completed. Exiting.');
+        return;
+    }
+} else if (scrapeState.lastScrapedSubforum) {
+    const resumeAnswer = await askQuestion(`Resume scraping from ${scrapeState.lastScrapedSubforum}? (Y/n) `);
+    if (resumeAnswer.toLowerCase() === 'n') {
+        await resetScrapingState();
+    } else {
+        logInfo(`Resuming scrape from subforum: ${scrapeState.lastScrapedSubforum}`);
+    }
+}
+
         logInfo('Getting forum statistics...');
         stats.totals = await getForumStats();
 
-        // if (!await confirmScrape()) {
-        //     logInfo('Scraping cancelled.');
-        //     return;
-        // }
+        if (!await confirmScrape()) {
+            logInfo('Scraping cancelled.');
+            return;
+        }
 
         logInfo('Starting forum scrape...');
         await scrapeSubforums();
 
         const subforums = await getSubforums();
-        for (const subforum of subforums) {
-            const threads = await getThreadsBySubforum(subforum.url);
-            for (const thread of threads) {
-                await scrapeThreadPosts(thread.url, allUsers);
-                await delay(config.DELAY_BETWEEN_REQUESTS);
-            }
-            await delay(config.SUBFORUM_DELAY);
+        const scrapingState = await getScrapingState();
+
+                // Find index to resume from if we have a last subforum
+                let startIndex = 0;
+                if (scrapingState.lastScrapedSubforum) {
+                    const resumeIndex = subforums.findIndex(s => s.url === scrapingState.lastScrapedSubforum);
+                    if (resumeIndex !== -1) {
+                        startIndex = resumeIndex;
+                        logInfo(`Resuming from subforum ${startIndex + 1}/${subforums.length}: ${subforums[startIndex].title}`);
+                    }
+                }
+ // Process subforums, starting from the resume point
+ for (let i = startIndex; i < subforums.length; i++) {
+    const subforum = subforums[i];
+    logInfo(`Processing subforum ${i + 1}/${subforums.length}: ${subforum.title}`);
+
+    // Save current subforum as checkpoint
+    await saveScrapingState(subforum.url, null);
+
+    const threads = await getThreadsBySubforum(subforum.url);
+
+    // Find thread index to resume from if we have a last thread and we're on the last subforum
+    let threadStartIndex = 0;
+    if (scrapingState.lastScrapedThread && subforum.url === scrapingState.lastScrapedSubforum) {
+        const resumeThreadIndex = threads.findIndex(t => t.url === scrapingState.lastScrapedThread);
+        if (resumeThreadIndex !== -1) {
+            threadStartIndex = resumeThreadIndex;
+            logInfo(`Resuming from thread ${threadStartIndex + 1}/${threads.length}: ${threads[threadStartIndex].title}`);
         }
+    }
+
+    // Process threads, starting from the resume point
+    for (let j = threadStartIndex; j < threads.length; j++) {
+        const thread = threads[j];
+        logInfo(`Processing thread ${j + 1}/${threads.length}: ${thread.title}`);
+
+        // Save current thread as checkpoint
+        await saveScrapingState(subforum.url, thread.url);
+
+        await scrapeThreadPosts(thread.url, allUsers);
+        await delay(config.DELAY_BETWEEN_REQUESTS);
+    }
+
+    // Clear thread checkpoint after finishing all threads in this subforum
+    await saveScrapingState(subforum.url, null);
+    await delay(config.SUBFORUM_DELAY);
+}
+
+// Mark scraping as completed
+await saveScrapingState(null, null, true);
 
         logInfo('Final Statistics:');
         stats.users = allUsers.size;

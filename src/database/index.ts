@@ -10,8 +10,10 @@ import {
     type Subforum,
     type Thread,
     type Post,
-    type File
+    type File,
+    type ScrapingState
 } from '../types/types';
+import { logError, logInfo } from '../utils/logging';
 
 let db: Database | null = null;
 
@@ -37,11 +39,11 @@ export async function initialiseDatabase(): Promise<void> {
         const answer = await askQuestion('Database exists. Delete and recreate? (y/N) ');
         if (answer.trim().toLowerCase() === 'y') {
             await unlink(config.DATABASE_PATH);
-            console.log(`${EMOJI_SUCCESS} Database reset.`);
+            logError(`${EMOJI_SUCCESS} Database reset.`);
             db = new Database(config.DATABASE_PATH, { create: true, readwrite: true });
             await setupDatabase(); // Only setup if deleting/recreating
         } else {
-            console.log(`${EMOJI_INFO} Using existing database.`);
+            logError(`${EMOJI_INFO} Using existing database.`);
             getDatabase(); //  Get connection, even if not deleting
         }
     } else {
@@ -92,13 +94,34 @@ export async function setupDatabase(): Promise<void> {
                 file_data BLOB NOT NULL,
                 FOREIGN KEY (post_id) REFERENCES posts(id)
             );
+            CREATE TABLE IF NOT EXISTS downloaded_files (
+                url TEXT PRIMARY KEY,
+                post_id INTEGER NOT NULL,
+                downloaded_at TEXT NOT NULL,
+                FOREIGN KEY (post_id) REFERENCES posts(id)
+            );
+            CREATE TABLE IF NOT EXISTS scraped_urls (
+                url TEXT PRIMARY KEY,
+                scraped_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS scraping_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                last_subforum_url TEXT,
+                last_thread_url TEXT,
+                last_updated TEXT NOT NULL,
+                completed BOOLEAN NOT NULL DEFAULT 0
+            );
+
+            -- Insert default scraping state if it doesn't exist
+            INSERT OR IGNORE INTO scraping_state (id, last_updated, completed)
+            VALUES (1, datetime('now'), 0);
         `);
-        console.log(`${EMOJI_SUCCESS} Database setup completed.`);
+        logInfo(`${EMOJI_SUCCESS} Database setup completed.`);
         if (!validateTables()) {
             throw new Error("Database validation failed");
         }
     } catch (error) {
-        console.error(`${EMOJI_ERROR} Failed to setup database:`, error);
+        logError(`${EMOJI_ERROR} Failed to setup database:`, error as Error);
         await closeDatabase();
         process.exit(1);
     }
@@ -106,17 +129,20 @@ export async function setupDatabase(): Promise<void> {
 
 function validateTables(): boolean {
     const currentDB = getDatabase();
-    const tables = ['subforums', 'threads', 'posts', 'users', 'files'];
+    const tables = [
+        'subforums', 'threads', 'posts', 'users', 'files',
+        'downloaded_files', 'scraped_urls', 'scraping_state'
+    ];
     const existingTables = currentDB.query("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[];
     const existingTableNames = new Set(existingTables.map(t => t.name));
     const missingTables = tables.filter(table => !existingTableNames.has(table));
 
     if (missingTables.length > 0) {
-        console.error(`${EMOJI_ERROR} Missing required tables: ${missingTables.join(', ')}`);
+        logError(`${EMOJI_ERROR} Missing required tables: ${missingTables.join(', ')}`);
         return false;
     }
 
-    console.log(`${EMOJI_SUCCESS} Database tables validated.`);
+    logInfo(`${EMOJI_SUCCESS} Database tables validated.`);
     return true;
 }
 
@@ -207,7 +233,7 @@ export async function insertSubforum(title: string, url: string, parentId: numbe
         }
         return { id, title, url, parentId };
     } catch (error) {
-        console.error(`${EMOJI_ERROR} Failed to process subforum:`, error);
+        logError(`${EMOJI_ERROR} Failed to process subforum:`, error as Error);
         throw error;
     }
 }
@@ -218,7 +244,7 @@ export function insertThread(subforumUrl: string, title: string, url: string, cr
         const stmt = currentDB.prepare("INSERT OR IGNORE INTO threads (subforum_url, title, url, creator, created_at) VALUES (?, ?, ?, ?, ?)");
         stmt.run(subforumUrl, title, url, creator, createdAt);
     } catch (error) {
-        console.error(`${EMOJI_ERROR} Failed to process thread:`, error);
+        logError(`${EMOJI_ERROR} Failed to process thread:`, error as Error);
         throw error;
     }
 }
@@ -231,7 +257,7 @@ export function insertPost(threadUrl: string, username: string, comment: string,
         trackUser(username, postedAt);
         return result.lastInsertRowid as number;
     } catch (error) {
-        console.error(`${EMOJI_ERROR} Failed to process post:`, error);
+        logError(`${EMOJI_ERROR} Failed to process post:`, error as Error);
         throw error;
     }
 }
@@ -254,7 +280,7 @@ export async function insertFile(postId: number, filename: string, mimeType: str
         }
         return { id, postId, filename, mimeType, fileData };
     } catch (error) {
-        console.error(`${EMOJI_ERROR} Failed to process file:`, error);
+        logError(`${EMOJI_ERROR} Failed to process file:`, error as Error);
         throw error;
     }
 }
@@ -270,7 +296,7 @@ export function trackUser(username: string, postedAt: string): void {
         `);
         stmt.run(username, postedAt);
     } catch (error) {
-        console.error(`${EMOJI_ERROR} Failed to track user:`, error);
+        logError(`${EMOJI_ERROR} Failed to track user:`, error as Error);
         throw error;
     }
 }
@@ -283,7 +309,245 @@ export function getUserCount(): number {
 export async function closeDatabase(): Promise<void> {
     if (db) {
         await db.close();
-        console.log(`${EMOJI_SUCCESS} Database connection closed.`);
+        logError(`${EMOJI_SUCCESS} Database connection closed.`);
         db = null;
     }
 }
+
+let scrapedUrls = new Set<string>();
+let downloadedFiles = new Set<string>();
+
+export async function loadScrapedUrls(): Promise<void> {
+    const currentDB = getDatabase();
+    try {
+        const results = currentDB.query("SELECT url FROM scraped_urls").all() as { url: string }[];
+        scrapedUrls.clear(); // Clear existing set first
+        results.forEach(row => scrapedUrls.add(row.url));
+        logError(`${EMOJI_INFO} Loaded ${scrapedUrls.size} previously scraped URLs`);
+    } catch (error) {
+        logError(`${EMOJI_ERROR} Failed to load scraped URLs:`, error as Error);
+    }
+}
+
+export async function loadDownloadedFiles(): Promise<void> {
+    const currentDB = getDatabase();
+    try {
+        const results = currentDB.query("SELECT url FROM downloaded_files").all() as { url: string }[];
+        downloadedFiles.clear(); // Clear existing set first
+        results.forEach(row => downloadedFiles.add(row.url));
+        logInfo(`${EMOJI_INFO} Loaded ${downloadedFiles.size} previously downloaded files`);
+    } catch (error) {
+        logError(`${EMOJI_ERROR} Failed to load downloaded files:`, error  as Error);
+    }
+}
+
+export async function isUrlScraped(url: string): Promise<boolean> {
+    // First check memory cache for performance
+    if (scrapedUrls.has(url)) {
+        return true;
+    }
+
+    // Then check database
+    const currentDB = getDatabase();
+    try {
+        const stmt = currentDB.prepare("SELECT url FROM scraped_urls WHERE url = ?");
+        const result = await stmt.get(url) as { url: string } | undefined;
+
+        // If found in database but not in memory, add to memory cache
+        if (result) {
+            scrapedUrls.add(url);
+            return true;
+        }
+
+        return false;
+    } catch (error) {
+        logError(`${EMOJI_ERROR} Failed to check if URL is scraped:`, error as Error);
+        return false;
+    }
+}
+
+export async function markUrlScraped(url: string): Promise<void> {
+    // Add to memory cache first
+    scrapedUrls.add(url);
+
+    // Then save to database
+    const currentDB = getDatabase();
+    try {
+        const stmt = currentDB.prepare("INSERT OR IGNORE INTO scraped_urls (url, scraped_at) VALUES (?, ?)");
+        stmt.run(url, new Date().toISOString());
+    } catch (error) {
+        logError(`${EMOJI_ERROR} Failed to mark URL as scraped:`, error as Error);
+    }
+}
+
+export async function isFileDownloaded(fileUrl: string): Promise<boolean> {
+    // First check memory cache for performance
+    if (downloadedFiles.has(fileUrl)) {
+        return true;
+    }
+
+    // Then check database
+    const currentDB = getDatabase();
+    try {
+        const stmt = currentDB.prepare("SELECT url FROM downloaded_files WHERE url = ?");
+        const result = await stmt.get(fileUrl) as { url: string } | undefined;
+
+        // If found in database but not in memory, add to memory cache
+        if (result) {
+            downloadedFiles.add(fileUrl);
+            return true;
+        }
+
+        return false;
+    } catch (error) {
+        logError(`${EMOJI_ERROR} Failed to check if file is downloaded:`, error as Error);
+        return false;
+    }
+}
+
+export async function markFileDownloaded(fileUrl: string, postId: number): Promise<void> {
+    // Add to memory cache first
+    downloadedFiles.add(fileUrl);
+
+    // Then save to database
+    const currentDB = getDatabase();
+    try {
+        const stmt = currentDB.prepare("INSERT OR IGNORE INTO downloaded_files (url, post_id, downloaded_at) VALUES (?, ?, ?)");
+        stmt.run(fileUrl, postId, new Date().toISOString());
+    } catch (error) {
+        logError(`${EMOJI_ERROR} Failed to mark file as downloaded:`, error as Error);
+    }
+}
+
+/**
+ * Saves the current scraping state to the database
+ * @param lastSubforumUrl The URL of the last subforum being processed, or null if complete
+ * @param lastThreadUrl The URL of the last thread being processed, or null if all threads in the subforum are complete
+ * @param completed Whether scraping is completed
+ * @returns Promise that resolves when the state has been saved
+ */
+export async function saveScrapingState(
+    lastSubforumUrl: string | null,
+    lastThreadUrl: string | null,
+    completed: boolean = false
+): Promise<void> {
+    const currentDB = getDatabase();
+    try {
+        const stmt = currentDB.prepare(`
+            UPDATE scraping_state
+            SET last_subforum_url = ?,
+                last_thread_url = ?,
+                last_updated = datetime('now'),
+                completed = ?
+            WHERE id = 1
+        `);
+        stmt.run(lastSubforumUrl, lastThreadUrl, completed ? 1 : 0);
+        logInfo(`${EMOJI_INFO} Scraping state saved: ${lastSubforumUrl || 'NONE'} - ${lastThreadUrl || 'NONE'} - Completed: ${completed}`);
+    } catch (error) {
+        logError(`${EMOJI_ERROR} Failed to save scraping state:`, error as Error);
+    }
+}
+
+export async function getScrapingState(): Promise<ScrapingState> {
+    const currentDB = getDatabase();
+    try {
+        const stmt = currentDB.prepare(`
+            SELECT
+                last_subforum_url as lastScrapedSubforum,
+                last_thread_url as lastScrapedThread,
+                last_updated as lastUpdated,
+                completed
+            FROM scraping_state
+            WHERE id = 1
+        `);
+        const result = await stmt.get() as ScrapingState | undefined;
+
+        if (!result) {
+            // Return default state if no record found
+            logInfo(`${EMOJI_INFO} No scraping state found, using default state`);
+            return {
+                lastScrapedSubforum: null,
+                lastScrapedThread: null,
+                lastUpdated: new Date().toISOString(),
+                completed: false
+            };
+        }
+
+        // Convert completed from number to boolean (SQLite stores booleans as 0/1)
+        return {
+            ...result,
+            completed: !!result.completed
+        };
+    } catch (error) {
+        logError(`${EMOJI_ERROR} Failed to get scraping state:`, error as Error);
+        // Return default state on error
+        return {
+            lastScrapedSubforum: null,
+            lastScrapedThread: null,
+            lastUpdated: new Date().toISOString(),
+            completed: false
+        };
+    }
+}
+
+export async function resetScrapingState(): Promise<void> {
+    const currentDB = getDatabase();
+    try {
+        const stmt = currentDB.prepare(`
+            UPDATE scraping_state
+            SET last_subforum_url = NULL,
+                last_thread_url = NULL,
+                last_updated = datetime('now'),
+                completed = 0
+            WHERE id = 1
+        `);
+        stmt.run();
+        logInfo(`${EMOJI_SUCCESS} Scraping state reset`);
+    } catch (error) {
+        logError(`${EMOJI_ERROR} Failed to reset scraping state:`, error as Error);
+    }
+}
+
+export async function getUrlsToScrape(urlList: string[]): Promise<string[]> {
+    const currentDB = getDatabase();
+    try {
+        // Create a temporary table with the URLs to check
+        currentDB.exec(`
+            CREATE TEMPORARY TABLE IF NOT EXISTS urls_to_check (
+                url TEXT PRIMARY KEY
+            )
+        `);
+
+        // Clear any existing data
+        currentDB.exec(`DELETE FROM urls_to_check`);
+
+        // Insert the URLs to check
+        const insertStmt = currentDB.prepare(`INSERT OR IGNORE INTO urls_to_check (url) VALUES (?)`);
+        urlList.forEach(url => {
+            insertStmt.run(url);
+        });
+
+        // Get URLs that aren't in the scraped_urls table
+        const results = currentDB.query(`
+            SELECT utc.url
+            FROM urls_to_check utc
+            LEFT JOIN scraped_urls su ON utc.url = su.url
+            WHERE su.url IS NULL
+        `).all() as { url: string }[];
+
+        return results.map(row => row.url);
+    } catch (error) {
+        logError(`${EMOJI_ERROR} Failed to get URLs to scrape:`, error as Error);
+        return [];
+    } finally {
+        // Clean up temporary table
+        try {
+            currentDB.exec(`DROP TABLE IF EXISTS urls_to_check`);
+        } catch (e) {
+            // Ignore cleanup errors
+        }
+    }
+}
+
+export const getScrapedUrlsSet = (): Set<string> => scrapedUrls;
+export const getDownloadedFilesSet = (): Set<string> => downloadedFiles;
