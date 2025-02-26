@@ -60,7 +60,7 @@ export interface ScrapingStats {
 }
 
 export interface FetchError extends Error {
-    type: 'network' | 'http' | 'empty';
+    type: 'network' | 'http' | 'empty' | 'duplicate' | 'stuck';
     status?: number;
 }
 

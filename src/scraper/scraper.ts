@@ -9,7 +9,15 @@ import {
     getSubforums,
     getThreadsBySubforum,
     closeDatabase,
-    getScrapingState
+    getScrapingState,
+    loadScrapedUrls,
+    loadDownloadedFiles,
+    isUrlScraped,
+    markUrlScraped,
+    isFileDownloaded,
+    markFileDownloaded,
+    saveScrapingState,
+    resetScrapingState
 } from '../database';
 import type {
     ScrapingStats,
@@ -28,8 +36,6 @@ import {
     printForumStats,
     printTestModeConfig
 } from '../utils/logging';
-import * as fs from 'fs/promises'; // Import fs.promises
-import * as path from 'path';
 
 let stats: ScrapingStats = {
     subforums: 0,
@@ -65,6 +71,12 @@ function createFetchError(type: FetchError['type'], message: string, status?: nu
 }
 
 async function fetchWithRetry(url: string): Promise<string> {
+
+    if (await isUrlScraped(url)) {
+        logInfo(`URL already scraped, skipping: ${url}`);
+        throw createFetchError('duplicate', `URL already scraped: ${url}`);
+    }
+
     let lastError: FetchError | null = null;
 
     for (let attempt = 1; attempt <= config.MAX_RETRIES; attempt++) {
@@ -83,6 +95,7 @@ async function fetchWithRetry(url: string): Promise<string> {
                 throw createFetchError('empty', 'Empty response received');
             }
 
+            await markUrlScraped(url);
             return text;
 
         } catch (error) {
@@ -288,6 +301,12 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
 
 
 async function downloadFile(fileUrl: string, postId: number): Promise<void> {
+
+    if (await isFileDownloaded(fileUrl)) {
+        logInfo(`File already downloaded, skipping: ${fileUrl}`);
+        return;
+    }
+
     try {
         const fileResponse = await fetch(fileUrl, { headers: config.HEADERS });
         if (!fileResponse.ok) {
@@ -306,7 +325,9 @@ async function downloadFile(fileUrl: string, postId: number): Promise<void> {
             logSuccess(`Inserted file into database: ${filename}`);
         }
 
-
+        await markFileDownloaded(fileUrl, postId);
+        stats.binariesDownloaded++;
+        logSuccess(`Inserted file into database: ${filename}`);
     } catch (fileError) {
         logError(`Error processing file ${fileUrl}`, fileError as Error);
         stats.binariesFailed++;
