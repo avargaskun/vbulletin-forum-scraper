@@ -326,7 +326,7 @@ export async function loadScrapedUrls(): Promise<void> {
         const results = currentDB.query("SELECT url FROM scraped_urls").all() as { url: string }[];
         scrapedUrls.clear(); // Clear existing set first
         results.forEach(row => scrapedUrls.add(row.url));
-        logError(`${EMOJI_INFO} Loaded ${scrapedUrls.size} previously scraped URLs`);
+        logInfo(`${EMOJI_INFO} Loaded ${scrapedUrls.size} previously scraped URLs`);
     } catch (error) {
         logError(`${EMOJI_ERROR} Failed to load scraped URLs:`, error as Error);
     }
