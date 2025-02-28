@@ -1,7 +1,8 @@
 {
   "name": "Hexus Forum Scraper Dev Container",
   "build": {
-    "dockerfile": "../Dockerfile"
+    "dockerfile": "./Dockerfile",
+    "context": ".."
   },
   "customizations": {
     "vscode": {
@@ -25,7 +26,8 @@
         "esbenp.prettier-vscode",
         "ms-azuretools.vscode-docker",
         "eamodio.gitlens",
-        "christian-kohler.npm-intellisense"
+        "christian-kohler.npm-intellisense",
+        "alexcvzz.vscode-sqlite"
       ]
     }
   },

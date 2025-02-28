@@ -471,7 +471,7 @@ async function scrapeThreadPosts(
                 const fileUrl = new URL(src, config.FORUM_URL).href
 
                 if (config.DOWNLOAD_FILES) {
-                  await downloadFile(fileUrl, postId) // Use the new download function
+                  await downloadFile(fileUrl, postId)
                 } else {
                   simpleLogInfo(`Would have downloaded: ${fileUrl}`)
                 }
