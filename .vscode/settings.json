@@ -1,46 +1,46 @@
 {
-    "name": "Hexus Forum Scraper Dev Container",
-    "build": {
-      "dockerfile": "../Dockerfile"
-    },
-    "customizations": {
-      "vscode": {
-        "settings": {
-          "terminal.integrated.shell.linux": "/usr/bin/fish",
-          "typescript.tsdk": "/usr/local/lib/node_modules/typescript/lib",
-          "editor.formatOnSave": true,
-          "files.eol": "\n",
-          "editor.defaultFormatter": "esbenp.prettier-vscode",
-          "eslint.validate": [
-            "javascript",
-            "javascriptreact",
-            "typescript",
-            "typescriptreact"
-          ],
-          "files.insertFinalNewline": true,
-          "files.trimTrailingWhitespace": true
-        },
-        "extensions": [
-          "dbaeumer.vscode-eslint",
-          "esbenp.prettier-vscode",
-          "ms-azuretools.vscode-docker",
-          "eamodio.gitlens",
-          "christian-kohler.npm-intellisense"
-        ]
-      }
-    },
-    "mounts": [
-      {
-        "source": "${localEnv:HOME}/.ssh",
-        "target": "/home/bun/.ssh",
-        "type": "bind"
+  "name": "Hexus Forum Scraper Dev Container",
+  "build": {
+    "dockerfile": "../Dockerfile"
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.shell.linux": "/usr/bin/fish",
+        "typescript.tsdk": "/usr/local/lib/node_modules/typescript/lib",
+        "editor.formatOnSave": true,
+        "files.eol": "\n",
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "eslint.validate": [
+          "javascript",
+          "javascriptreact",
+          "typescript",
+          "typescriptreact"
+        ],
+        "files.insertFinalNewline": true,
+        "files.trimTrailingWhitespace": true
       },
-      {
-        "source": "${localWorkspaceFolder}/database",
-        "target": "/app/database",
-        "type": "bind"
-      }
-    ],
-    "postCreateCommand": "bun install",
-    "remoteUser": "bun"
-  }
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "ms-azuretools.vscode-docker",
+        "eamodio.gitlens",
+        "christian-kohler.npm-intellisense"
+      ]
+    }
+  },
+  "mounts": [
+    {
+      "source": "${localEnv:HOME}/.ssh",
+      "target": "/home/bun/.ssh",
+      "type": "bind"
+    },
+    {
+      "source": "${localWorkspaceFolder}/database",
+      "target": "/app/database",
+      "type": "bind"
+    }
+  ],
+  "postCreateCommand": "bun install",
+  "remoteUser": "bun"
+}

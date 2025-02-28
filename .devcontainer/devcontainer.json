@@ -36,9 +36,9 @@
       "type": "bind"
     },
     {
-      "source": "hexus-db-data", 
+      "source": "hexus-db-data",
       "target": "/app/database",
-      "type": "volume"  
+      "type": "volume"
     }
   ],
   "remoteUser": "bun"

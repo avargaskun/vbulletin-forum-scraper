@@ -1,13 +1,13 @@
 interface HomePageProps {
-    subforums: Array<{
-        title: string;
-        url: string;
-        description?: string;
-    }>;
+  subforums: Array<{
+    title: string
+    url: string
+    description?: string
+  }>
 }
 
 export default async function HomePage({ subforums }: HomePageProps) {
-    return `
+  return `
         <!DOCTYPE html>
         <html lang="en">
         <head>
@@ -24,14 +24,18 @@ export default async function HomePage({ subforums }: HomePageProps) {
                 <nav class="subforum-list">
                     <h2>Subforums</h2>
                     <ul>
-                        ${subforums.map(subforum => `
+                        ${subforums
+                          .map(
+                            (subforum) => `
                             <li>
                                 <a href="${subforum.url.replace(/[^a-zA-Z0-9]/g, '_')}.html">
                                     ${subforum.title}
                                 </a>
                                 ${subforum.description ? `<p>${subforum.description}</p>` : ''}
                             </li>
-                        `).join('')}
+                        `
+                          )
+                          .join('')}
                     </ul>
                 </nav>
             </main>
@@ -40,5 +44,5 @@ export default async function HomePage({ subforums }: HomePageProps) {
             </footer>
         </body>
         </html>
-    `;
+    `
 }

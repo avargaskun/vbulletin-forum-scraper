@@ -1,17 +1,20 @@
-import type { Subforum, Thread } from '../../types/types';
-import PostList from '../components/PostList';
-import * as db from '../../database/index';
+import type { Subforum, Thread } from '../../types/types'
+import PostList from '../components/PostList'
+import * as db from '../../database/index'
 
 export interface ThreadPageProps {
-  subforum: Subforum;
-  thread: Thread;  // thread is required
+  subforum: Subforum
+  thread: Thread // thread is required
 }
 
-export default async function ThreadPage({ subforum, thread }: ThreadPageProps) {
-    const posts = await db.getPostsByThread(thread.url);
-    const userCount = await db.getUsersCountByThread(thread.url);
+export default async function ThreadPage({
+  subforum,
+  thread,
+}: ThreadPageProps) {
+  const posts = await db.getPostsByThread(thread.url)
+  const userCount = await db.getUsersCountByThread(thread.url)
 
-    return `
+  return `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -28,5 +31,5 @@ export default async function ThreadPage({ subforum, thread }: ThreadPageProps) 
   </div>
 </body>
 </html>
-  `;
+  `
 }

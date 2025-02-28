@@ -7,14 +7,14 @@ A comprehensive forum scraper for the Hexus Forums using Bun and TypeScript. Fea
 
 ## Features ✨
 
-* Full forum scraping with pagination support
-* Rate limiting and retry mechanisms
-* Progress tracking and statistics
-* SQLite database storage
-* Minitel-inspired interactive CLI viewer with ASCII art support
-* Error handling and recovery
-* Configurable scraping parameters
-* Image to ASCII art conversion
+- Full forum scraping with pagination support
+- Rate limiting and retry mechanisms
+- Progress tracking and statistics
+- SQLite database storage
+- Minitel-inspired interactive CLI viewer with ASCII art support
+- Error handling and recovery
+- Configurable scraping parameters
+- Image to ASCII art conversion
 
 ## Setup 🛠️
 
@@ -28,27 +28,30 @@ For the easiest and most consistent development experience, we highly recommend 
 
 **Dev Container Benefits:**
 
-* **Consistent Environment:** Ensures everyone is using the same versions of Node.js, Bun, and other tools
-* **Pre-installed Dependencies:** All required dependencies are already installed within the container
-* **Simplified Setup:** No need to manually install Bun, Node.js, or other tools on your local machine
-* **Integrated Terminal:** The default terminal in the Dev Container is `fish`, a user-friendly shell
-* **Helpful Shortcuts:**
-  * `scrape`: Runs the scraper (`bun run scrape`)
-  * `browse`: Runs the CLI viewer (`bun run browse`)
-  * `dbreset`: Resets the database (`bun run db:reset`)
-  * `help`: Displays help for the shell
+- **Consistent Environment:** Ensures everyone is using the same versions of Node.js, Bun, and other tools
+- **Pre-installed Dependencies:** All required dependencies are already installed within the container
+- **Simplified Setup:** No need to manually install Bun, Node.js, or other tools on your local machine
+- **Integrated Terminal:** The default terminal in the Dev Container is `fish`, a user-friendly shell
+- **Helpful Shortcuts:**
+  - `scrape`: Runs the scraper (`bun run scrape`)
+  - `browse`: Runs the CLI viewer (`bun run browse`)
+  - `dbreset`: Resets the database (`bun run db:reset`)
+  - `help`: Displays help for the shell
 
 ### Manual Setup
 
 If you prefer not to use the Dev Container, you can set up the project manually:
 
 1. Clone the repository:
+
    ```bash
    git clone https://github.com/milesburton/hexus-forum-scraper.git
    ```
+
    **Important**: Ensure the project is in your WSL2 filesystem (e.g., `/home/<your_username>/`)
 
 2. Install dependencies:
+
    ```bash
    bun install
    ```
@@ -60,31 +63,35 @@ If you prefer not to use the Dev Container, you can set up the project manually:
 ### Scraping the Forum ⚙️
 
 Run the scraper:
+
 ```bash
 bun run scrape
 ```
 
 The scraper will:
-* Create/reset the database if requested
-* Scrape all subforums
-* Follow pagination for threads and posts
-* Display progress statistics
-* Handle errors gracefully
+
+- Create/reset the database if requested
+- Scrape all subforums
+- Follow pagination for threads and posts
+- Display progress statistics
+- Handle errors gracefully
 
 ### Browsing Scraped Data 🖥️
 
 Launch the CLI viewer:
+
 ```bash
 bun run browse
 ```
 
 Features:
-* Browse subforums, threads, and posts with a Minitel-inspired interface
-* Pagination support for large content
-* Easy keyboard-based navigation
-* Real-time statistics display
-* ASCII art conversion for images
-* Thread and subforum hierarchy visualization
+
+- Browse subforums, threads, and posts with a Minitel-inspired interface
+- Pagination support for large content
+- Easy keyboard-based navigation
+- Real-time statistics display
+- ASCII art conversion for images
+- Thread and subforum hierarchy visualization
 
 Here's how it looks in action:
 
@@ -177,23 +184,23 @@ src/
 
 The scraper is configured using environment variables, typically set in a `.env` file. Here's a breakdown of each option:
 
-| Variable Name | Description | Default Value | Type |
-|--------------|-------------|---------------|------|
-| `FORUM_URL` | The base URL of the Hexus forum to scrape | `""` | `string` |
-| `DATABASE_PATH` | Path to the SQLite database file | `data/forum_data.db` | `string` |
-| `USER_AGENT` | User-Agent string for HTTP requests | (Chrome User Agent) | `string` |
-| `HEADERS` | HTTP headers to include with requests | (Chrome User Agent header) | `object` |
-| `DELAY_BETWEEN_REQUESTS` | Delay (ms) between consecutive requests | `500` | `number` |
-| `MAX_RETRIES` | Maximum number of times to retry a failed request | `3` | `number` |
-| `RETRY_DELAY` | Delay (ms) before retrying a failed request | `5000` | `number` |
-| `SUBFORUM_DELAY` | Additional delay (ms) after scraping a subforum | `10000` | `number` |
-| `DOWNLOAD_FILES` | Whether to download files linked in posts | `false` | `boolean` |
-| `TEST_MODE` | Enables test mode for development/testing | `false` | `boolean` |
-| `MAX_SUBFORUMS` | Maximum number of subforums to scrape | `null` | `number?` |
-| `MAX_THREADS_PER_SUBFORUM` | Maximum threads to scrape per subforum | `null` | `number?` |
-| `MAX_POSTS_PER_THREAD` | Maximum posts to scrape per thread | `null` | `number?` |
-| `MAX_PAGES_PER_SUBFORUM` | Maximum pages to scrape per subforum | `null` | `number?` |
-| `MAX_PAGES_PER_THREAD` | Maximum pages to scrape per thread | `null` | `number?` |
+| Variable Name              | Description                                       | Default Value              | Type      |
+| -------------------------- | ------------------------------------------------- | -------------------------- | --------- |
+| `FORUM_URL`                | The base URL of the Hexus forum to scrape         | `""`                       | `string`  |
+| `DATABASE_PATH`            | Path to the SQLite database file                  | `data/forum_data.db`       | `string`  |
+| `USER_AGENT`               | User-Agent string for HTTP requests               | (Chrome User Agent)        | `string`  |
+| `HEADERS`                  | HTTP headers to include with requests             | (Chrome User Agent header) | `object`  |
+| `DELAY_BETWEEN_REQUESTS`   | Delay (ms) between consecutive requests           | `500`                      | `number`  |
+| `MAX_RETRIES`              | Maximum number of times to retry a failed request | `3`                        | `number`  |
+| `RETRY_DELAY`              | Delay (ms) before retrying a failed request       | `5000`                     | `number`  |
+| `SUBFORUM_DELAY`           | Additional delay (ms) after scraping a subforum   | `10000`                    | `number`  |
+| `DOWNLOAD_FILES`           | Whether to download files linked in posts         | `false`                    | `boolean` |
+| `TEST_MODE`                | Enables test mode for development/testing         | `false`                    | `boolean` |
+| `MAX_SUBFORUMS`            | Maximum number of subforums to scrape             | `null`                     | `number?` |
+| `MAX_THREADS_PER_SUBFORUM` | Maximum threads to scrape per subforum            | `null`                     | `number?` |
+| `MAX_POSTS_PER_THREAD`     | Maximum posts to scrape per thread                | `null`                     | `number?` |
+| `MAX_PAGES_PER_SUBFORUM`   | Maximum pages to scrape per subforum              | `null`                     | `number?` |
+| `MAX_PAGES_PER_THREAD`     | Maximum pages to scrape per thread                | `null`                     | `number?` |
 
 **Example `.env` file:**
 
@@ -212,10 +219,11 @@ MAX_POSTS_PER_THREAD=20
 ## Error Handling 🔧
 
 The scraper includes:
-* Retry mechanism for failed requests
-* Rate limiting to prevent server overload
-* Graceful shutdown handling
-* Detailed error logging
+
+- Retry mechanism for failed requests
+- Rate limiting to prevent server overload
+- Graceful shutdown handling
+- Detailed error logging
 
 ## Contributing 🤝
 
