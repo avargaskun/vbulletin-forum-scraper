@@ -1,4 +1,4 @@
-# Hexus Forum Scraper 🚀
+# Vbulletin Forum Scraper 🚀
 
 [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
@@ -227,7 +227,7 @@ The scraper includes:
 
 ## Contributing 🤝
 
-1. Fork the repository from [milesburton/hexus-forum-scraper](https://github.com/milesburton/hexus-forum-scraper)
+1. Fork the repository from [milesburton/hexus-forum-scraper](https://github.com/milesburton/vbulletin-forum-scraper)
 2. Create your feature branch
 3. Commit your changes
 4. Push to the branch
