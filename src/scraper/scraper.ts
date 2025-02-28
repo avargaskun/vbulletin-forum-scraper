@@ -23,7 +23,8 @@ import type {
     ScrapingStats,
     FetchError,
     ForumStats,
-    Subforum
+    Subforum,
+    FetchOptions
 } from '../types/types';
 import { askQuestion } from '../utils/readline';
 import {
@@ -70,11 +71,11 @@ function createFetchError(type: FetchError['type'], message: string, status?: nu
     return error;
 }
 
-async function fetchWithRetry(url: string): Promise<string> {
+async function fetchWithRetry(url: string, opts: FetchOptions = {shouldMarkScraped: true}): Promise<string> {
 
-    if (await isUrlScraped(url)) {
+    if (opts.shouldMarkScraped && await isUrlScraped(url)) {
         logInfo(`URL already scraped, skipping: ${url}`);
-        throw createFetchError('duplicate', `URL already scraped: ${url}`);
+        return '';
     }
 
     let lastError: FetchError | null = null;
@@ -83,7 +84,17 @@ async function fetchWithRetry(url: string): Promise<string> {
         try {
             await rateLimit();
             simpleLogInfo(`Fetching: ${url} (Attempt ${attempt}/${config.MAX_RETRIES})`);
-            const response = await fetch(url, { headers: config.HEADERS });
+            const response = await fetch(url, {
+                headers: {
+                    ...config.HEADERS,
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                    'Cache-Control': 'max-age=0'
+                }
+             });
 
             if (!response.ok) {
                 throw createFetchError('http', `HTTP error! status: ${response.status}`, response.status);
@@ -95,7 +106,9 @@ async function fetchWithRetry(url: string): Promise<string> {
                 throw createFetchError('empty', 'Empty response received');
             }
 
-            await markUrlScraped(url);
+            if (shouldMarkScraped) {
+                await markUrlScraped(url);
+            }
             return text;
 
         } catch (error) {
@@ -125,7 +138,7 @@ async function wasScrapingCompleted(): Promise<boolean> {
 }
 
 async function getForumStats(): Promise<ForumStats> {
-    const html = await fetchWithRetry(config.FORUM_URL);
+    const html = await fetchWithRetry(config.FORUM_URL, false);
     const $ = cheerio.load(html);
 
     const totals: ForumStats = {

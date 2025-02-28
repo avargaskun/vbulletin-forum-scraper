@@ -88,3 +88,5 @@ export interface ScrapingState {
     lastUpdated: string;
     completed: boolean;
 }
+
+export type FetchOptions = { shouldMarkScraped?: boolean };

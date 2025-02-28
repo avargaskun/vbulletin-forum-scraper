@@ -13,7 +13,7 @@ import {
     type File,
     type ScrapingState
 } from '../types/types';
-import { logError, logInfo } from '../utils/logging';
+import { logError, logInfo, logWarning } from '../utils/logging';
 
 let db: Database | null = null;
 let scrapedUrls = new Set<string>();
@@ -136,11 +136,11 @@ export async function initialiseDatabase(): Promise<void> {
         const answer = await askQuestion('Database exists. Delete and recreate? (y/N) ');
         if (answer.trim().toLowerCase() === 'y') {
             await unlink(config.DATABASE_PATH);
-            logError(`${EMOJI_SUCCESS} Database reset.`);
+            logWarning(`${EMOJI_SUCCESS} Database reset.`);
             db = new Database(config.DATABASE_PATH, { create: true, readwrite: true });
             await setupDatabase(); // Only setup if deleting/recreating
         } else {
-            logError(`${EMOJI_INFO} Using existing database.`);
+            logWarning(`${EMOJI_INFO} Using existing database.`);
             getDatabase(); //  Get connection, even if not deleting
         }
     } else {
