@@ -45,7 +45,7 @@ If you prefer not to use the Dev Container, you can set up the project manually:
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/milesburton/hexus-forum-scraper.git
+   git clone https://github.com/milesburton/vbulletin-forum-scraper.git
    ```
 
    **Important**: Ensure the project is in your WSL2 filesystem (e.g., `/home/<your_username>/`)
@@ -227,7 +227,7 @@ The scraper includes:
 
 ## Contributing 🤝
 
-1. Fork the repository from [milesburton/hexus-forum-scraper](https://github.com/milesburton/vbulletin-forum-scraper)
+1. Fork the repository from [milesburton/vbulletin-forum-scraper](https://github.com/milesburton/vbulletin-forum-scraper)
 2. Create your feature branch
 3. Commit your changes
 4. Push to the branch
