@@ -230,7 +230,7 @@ async function scrapeSubforums(
   }
   const $ = cheerio.load(html)
 
-  const subforumListItems = $('td[id^="td_forumtitle_"] a')
+  const subforumListItems = $(config.CSS_SELECTOR_SUBFORUM)
 
   simpleLogInfo(
     `Found ${subforumListItems.length} subforums/child forums on ${url}`
@@ -295,7 +295,7 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
       }
       const $ = cheerio.load(html)
 
-      const threadRows = $('#threads > li.threadbit')
+      const threadRows = $(config.CSS_SELECTOR_THREAD)
 
       simpleLogInfo(`Found ${threadRows.length} threads on page: ${pageUrl}`)
       stats.pagesProcessed++
@@ -312,7 +312,7 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
         try {
           const $threadRow = $(threadRow)
 
-          const titleLink = $threadRow.find('h3.threadtitle a.title')
+          const titleLink = $threadRow.find(config.CSS_SELECTOR_THREAD_TITLE)
           const title = titleLink.text().trim()
           const href = titleLink.attr('href')
 
@@ -326,7 +326,7 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
           const threadUrl = new URL(href, config.FORUM_URL).href
 
           const authorDateSpan = $threadRow.find(
-            '.threadmeta .author span.label'
+            config.CSS_SELECTOR_THREAD_AUTHOR_DATE
           )
           const authorDateText = authorDateSpan.text().trim()
 

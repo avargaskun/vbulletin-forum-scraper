@@ -75,4 +75,22 @@ export const config: Config = {
   MAX_PAGES_PER_THREAD: getEnvVar('MAX_PAGES_PER_THREAD', null) as
     | number
     | null,
+  CSS_SELECTOR_SUBFORUM: String(
+    getEnvVar(
+      'CSS_SELECTOR_SUBFORUM',
+      'ol#forums > li.forumbit_nopost > ol.childforum > li.forumbit_post h2.forumtitle > a'
+    )
+  ),
+  CSS_SELECTOR_THREAD: String(
+    getEnvVar('CSS_SELECTOR_THREAD', '#threads > li.threadbit')
+  ),
+  CSS_SELECTOR_THREAD_TITLE: String(
+    getEnvVar('CSS_SELECTOR_THREAD_TITLE', 'h3.threadtitle a.title')
+  ),
+  CSS_SELECTOR_THREAD_AUTHOR_DATE: String(
+    getEnvVar(
+      'CSS_SELECTOR_THREAD_AUTHOR_DATE',
+      '.threadmeta .author span.label'
+    )
+  ),
 }
