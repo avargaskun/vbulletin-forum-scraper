@@ -233,7 +233,7 @@ export async function getThreadsCountBySubforum(
   const stmt = currentDB.prepare(
     'SELECT COUNT(*) as count FROM threads WHERE subforum_url = ?'
   )
-  const result = (await stmt.get(subforumUrl)) as { count: number }
+  const result = stmt.get(subforumUrl) as { count: number }
   return result.count
 }
 
