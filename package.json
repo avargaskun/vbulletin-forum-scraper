@@ -4,6 +4,7 @@
   "scripts": {
     "scrape": "ts-node src/scraper/scraper.ts",
     "browse": "ts-node src/cli/viewer.ts",
+    "export": "ts-node src/cli/exporter.ts",
     "db:reset": "ts-node src/database/index.ts",
     "db:seed": "ts-node src/database/seed.ts",
     "lint": "eslint . --ext .ts,.tsx",
