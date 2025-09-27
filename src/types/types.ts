@@ -85,6 +85,7 @@ export interface Config {
   CSS_SELECTOR_THREAD: string
   CSS_SELECTOR_THREAD_TITLE: string
   CSS_SELECTOR_THREAD_AUTHOR_DATE: string
+  USE_FLARESOLVERR: string | null
 }
 
 export interface ScrapingState {

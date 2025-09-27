@@ -26,6 +26,12 @@ import type {
   Subforum,
   FetchOptions,
 } from '../types/types'
+import { randomUUID } from 'crypto'
+import type {
+  FlareSolverrResponse,
+  FlareSolverrSession,
+  FlareSolverrSessionCreateResponse,
+} from '../types/flaresolverr'
 import { askQuestion } from '../utils/readline'
 import {
   logError,
@@ -37,6 +43,9 @@ import {
   printForumStats,
   printTestModeConfig,
 } from '../utils/logging'
+
+let flareSolverrUrl: string | null = null
+let flareSolverrSessionId: string | null = null
 
 let stats: ScrapingStats = {
   subforums: 0,
@@ -62,6 +71,45 @@ async function rateLimit(): Promise<void> {
     await delay(config.DELAY_BETWEEN_REQUESTS - timeSinceLastRequest)
   }
   lastRequestTime = Date.now()
+}
+
+async function getFlareSolverrSessionData(): Promise<FlareSolverrSession | null> {
+  if (!flareSolverrUrl || !flareSolverrSessionId) {
+    return null
+  }
+
+  const response = await fetch(flareSolverrUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      cmd: 'request.get',
+      url: config.FORUM_URL,
+      session: flareSolverrSessionId,
+      maxTimeout: 60000,
+    }),
+  })
+
+  if (!response.ok) {
+    throw createFetchError(
+      'http',
+      `FlareSolverr error! status: ${response.status}`,
+      response.status
+    )
+  }
+
+  const data = (await response.json()) as FlareSolverrResponse
+
+  if (data.status !== 'ok') {
+    throw createFetchError('network', `FlareSolverr error: ${data.message}`)
+  }
+
+  return {
+    session: flareSolverrSessionId,
+    userAgent: data.solution.userAgent,
+    cookies: data.solution.cookies,
+  }
 }
 
 function createFetchError(
@@ -92,38 +140,76 @@ async function fetchWithRetry(
       simpleLogInfo(
         `Fetching: ${url} (Attempt ${attempt}/${config.MAX_RETRIES})`
       )
-      const response = await fetch(url, {
-        headers: {
-          ...config.HEADERS,
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0',
-          Accept:
-            'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.5',
-          Connection: 'keep-alive',
-          'Upgrade-Insecure-Requests': '1',
-          'Cache-Control': 'max-age=0',
-        },
-      })
 
-      if (!response.ok) {
-        throw createFetchError(
-          'http',
-          `HTTP error! status: ${response.status}`,
-          response.status
-        )
+      let html: string
+      if (flareSolverrUrl && flareSolverrSessionId) {
+        // Use FlareSolverr
+        const response = await fetch(flareSolverrUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            cmd: 'request.get',
+            url: url,
+            session: flareSolverrSessionId,
+            maxTimeout: 60000,
+            headers: config.HEADERS,
+          }),
+        })
+
+        if (!response.ok) {
+          throw createFetchError(
+            'http',
+            `FlareSolverr error! status: ${response.status}`,
+            response.status
+          )
+        }
+
+        const data = (await response.json()) as FlareSolverrResponse
+
+        if (data.status !== 'ok') {
+          throw createFetchError(
+            'network',
+            `FlareSolverr error: ${data.message}`
+          )
+        }
+        html = data.solution.response
+      } else {
+        // Use direct fetch
+        const response = await fetch(url, {
+          headers: {
+            ...config.HEADERS,
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0',
+            Accept:
+              'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            Connection: 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Cache-Control': 'max-age=0',
+          },
+        })
+
+        if (!response.ok) {
+          throw createFetchError(
+            'http',
+            `HTTP error! status: ${response.status}`,
+            response.status
+          )
+        }
+
+        html = await response.text()
       }
 
-      const text = await response.text()
-
-      if (!text || text.length === 0) {
+      if (!html || html.length === 0) {
         throw createFetchError('empty', 'Empty response received')
       }
 
       if (opts.shouldMarkScraped) {
         await markUrlScraped(url)
       }
-      return text
+      return html
     } catch (error) {
       lastError =
         error instanceof Error
@@ -385,14 +471,26 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
   }
 }
 
-async function downloadFile(fileUrl: string, postId: number): Promise<void> {
+async function downloadFile(
+  fileUrl: string,
+  postId: number,
+  flareSolverrSession: FlareSolverrSession | null
+): Promise<void> {
   if (await isFileDownloaded(fileUrl)) {
     logInfo(`File already downloaded, skipping: ${fileUrl}`)
     return
   }
 
   try {
-    const fileResponse = await fetch(fileUrl, { headers: config.HEADERS })
+    const headers: Record<string, string> = { ...config.HEADERS }
+    if (flareSolverrSession) {
+      headers['User-Agent'] = flareSolverrSession.userAgent
+      headers['Cookie'] = flareSolverrSession.cookies
+        .map((cookie) => `${cookie.name}=${cookie.value}`)
+        .join('; ')
+    }
+
+    const fileResponse = await fetch(fileUrl, { headers })
     if (!fileResponse.ok) {
       logError(
         `Error downloading file: ${fileUrl}, Status: ${fileResponse.status}`
@@ -426,6 +524,8 @@ async function scrapeThreadPosts(
 ): Promise<void> {
   let pageUrl: string = threadUrl
   let pageCount = 0
+
+  const flareSolverrSession = await getFlareSolverrSessionData()
 
   while (pageUrl) {
     if (
@@ -481,7 +581,7 @@ async function scrapeThreadPosts(
                 const fileUrl = new URL(src, config.FORUM_URL).href
 
                 if (config.DOWNLOAD_FILES) {
-                  await downloadFile(fileUrl, postId)
+                  await downloadFile(fileUrl, postId, flareSolverrSession)
                 } else {
                   simpleLogInfo(`Would have downloaded: ${fileUrl}`)
                 }
@@ -524,6 +624,11 @@ async function confirmScrape(): Promise<boolean> {
 }
 
 async function main() {
+  if (config.USE_FLARESOLVERR) {
+    flareSolverrUrl = config.USE_FLARESOLVERR
+    logInfo(`Using FlareSolverr proxy at: ${flareSolverrUrl}`)
+  }
+
   const allUsers = new Set<string>()
   let exitCode = 0
 
@@ -537,6 +642,29 @@ async function main() {
       startTime: new Date(),
       binariesDownloaded: 0,
       binariesFailed: 0,
+    }
+
+    if (flareSolverrUrl) {
+      try {
+        const sessionId = randomUUID()
+        logInfo('Creating FlareSolverr session...')
+        const response = await fetch(flareSolverrUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cmd: 'sessions.create', session: sessionId }),
+        })
+        const data =
+          (await response.json()) as FlareSolverrSessionCreateResponse
+        if (data.status === 'ok' && data.session === sessionId) {
+          flareSolverrSessionId = data.session
+          logSuccess(`FlareSolverr session created: ${flareSolverrSessionId}`)
+        } else {
+          throw new Error(`Failed to create session: ${data.message}`)
+        }
+      } catch (error) {
+        logError('Could not create FlareSolverr session.', error as Error)
+        process.exit(1)
+      }
     }
 
     await initialiseDatabase()
@@ -658,6 +786,22 @@ async function main() {
     logError('Fatal error', error as Error)
     exitCode = 1
   } finally {
+    if (flareSolverrUrl && flareSolverrSessionId) {
+      try {
+        logInfo('Destroying FlareSolverr session...')
+        await fetch(flareSolverrUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cmd: 'sessions.destroy',
+            session: flareSolverrSessionId,
+          }),
+        })
+        logSuccess('FlareSolverr session destroyed.')
+      } catch (error) {
+        logError('Failed to destroy FlareSolverr session.', error as Error)
+      }
+    }
     closeDatabase()
     process.exit(exitCode)
   }

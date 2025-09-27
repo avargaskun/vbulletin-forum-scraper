@@ -96,4 +96,5 @@ export const config: Config = {
       '.threadmeta .author span.label'
     )
   ),
+  USE_FLARESOLVERR: getEnvVar('USE_FLARESOLVERR', null) as string | null,
 }
