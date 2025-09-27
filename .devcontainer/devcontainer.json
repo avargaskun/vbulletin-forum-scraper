@@ -1,5 +1,5 @@
 {
-  "name": "Hexus Forum Scraper Dev Container",
+  "name": "vBulletin Forum Scraper Dev Container",
   "build": {
     "dockerfile": "./Dockerfile",
     "context": ".."
@@ -34,14 +34,14 @@
   "mounts": [
     {
       "source": "${localEnv:HOME}/.ssh",
-      "target": "/home/bun/.ssh",
+      "target": "/home/node/.ssh",
       "type": "bind"
     },
     {
-      "source": "hexus-db-data",
-      "target": "/app/database",
+      "source": "vbulletin-db-data",
+      "target": "/app/data",
       "type": "volume"
     }
   ],
-  "remoteUser": "bun"
+  "remoteUser": "node"
 }

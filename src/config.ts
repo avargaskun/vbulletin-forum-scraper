@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { dirname } from 'path'
 import { existsSync, mkdirSync } from 'fs'
 import { type Config } from './types/types'
@@ -18,13 +19,14 @@ function getEnvVar(
   switch (typeof defaultValue) {
     case 'string':
       return value
-    case 'number':
+    case 'number': {
       const num = parseInt(value, 10)
       if (isNaN(num)) {
         console.error(`❌ ${key} must be a valid number.`)
         process.exit(1)
       }
       return num
+    }
     case 'boolean':
       if (value.toLowerCase() === 'true') {
         return true
@@ -33,6 +35,7 @@ function getEnvVar(
       }
       console.error(`❌ ${key} must be a boolean value (true or false).`)
       process.exit(1)
+      break
     default:
       return value
   }

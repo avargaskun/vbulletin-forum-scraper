@@ -56,6 +56,7 @@ async function showMenu(prompt: string, options: string[]): Promise<number> {
 
   const rl = readline.createInterface({ input, output })
   try {
+    // eslint-disable-next-line no-constant-condition
     while (true) {
       const answer = await rl.question('Enter your choice (or q to go back): ')
       if (answer.toLowerCase() === 'q') return -1
@@ -275,7 +276,7 @@ async function browseThreads(
   } else if (options[choice - 1] === 'Next Page') {
     await browseThreads(subforumUrl, page + 1)
   } else {
-    let selectedIndex = choice - 1
+    const selectedIndex = choice - 1
     const selectedThread = pageThreads[selectedIndex]
     await viewThread(selectedThread.url, 1, subforumUrl)
   }

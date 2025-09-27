@@ -230,9 +230,7 @@ async function scrapeSubforums(
   }
   const $ = cheerio.load(html)
 
-  const subforumListItems = $(
-    'ol#forums > li.forumbit_nopost > ol.childforum > li.forumbit_post h2.forumtitle > a'
-  )
+  const subforumListItems = $('td[id^="td_forumtitle_"] a')
 
   simpleLogInfo(
     `Found ${subforumListItems.length} subforums/child forums on ${url}`
@@ -248,7 +246,7 @@ async function scrapeSubforums(
 
     const $listItem = $(element)
     const title = $listItem.text().trim()
-    let href = $listItem.attr('href')
+    const href = $listItem.attr('href')
 
     if (!title || !href) {
       logWarning(`Invalid forum title or href on ${url}`)
@@ -506,18 +504,16 @@ async function scrapeThreadPosts(
 
 async function confirmScrape(): Promise<boolean> {
   if (config.TEST_MODE) {
-    // Print test mode config before asking for confirmation
-    await new Promise((resolve) => setTimeout(resolve, 100))
     printTestModeConfig(config)
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    return true
   }
   const answer = await askQuestion('Continue with scrape? (y/N) ')
-  await new Promise((resolve) => setTimeout(resolve, 100))
   return answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes'
 }
 
 async function main() {
   const allUsers = new Set<string>()
+  let exitCode = 0
 
   try {
     stats = {
@@ -648,9 +644,10 @@ async function main() {
     logSuccess('Scraping completed successfully.')
   } catch (error) {
     logError('Fatal error', error as Error)
+    exitCode = 1
   } finally {
     closeDatabase()
-    process.exit(1)
+    process.exit(exitCode)
   }
 }
 
