@@ -3,7 +3,7 @@
 [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 
-A comprehensive forum scraper for the Hexus Forums using Bun and TypeScript. Features pagination support, rate limiting, and a CLI viewer for browsing scraped content. This project also includes functionality to convert images to ASCII art.
+A comprehensive forum scraper for the Hexus Forums using Node.js and TypeScript. Features pagination support, rate limiting, and a CLI viewer for browsing scraped content. This project also includes functionality to convert images to ASCII art.
 
 ## Features ✨
 
@@ -28,14 +28,14 @@ For the easiest and most consistent development experience, we highly recommend 
 
 **Dev Container Benefits:**
 
-- **Consistent Environment:** Ensures everyone is using the same versions of Node.js, Bun, and other tools
+- **Consistent Environment:** Ensures everyone is using the same versions of Node.js, and other tools
 - **Pre-installed Dependencies:** All required dependencies are already installed within the container
-- **Simplified Setup:** No need to manually install Bun, Node.js, or other tools on your local machine
+- **Simplified Setup:** No need to manually install Node.js, or other tools on your local machine
 - **Integrated Terminal:** The default terminal in the Dev Container is `fish`, a user-friendly shell
 - **Helpful Shortcuts:**
-  - `scrape`: Runs the scraper (`bun run scrape`)
-  - `browse`: Runs the CLI viewer (`bun run browse`)
-  - `dbreset`: Resets the database (`bun run db:reset`)
+  - `scrape`: Runs the scraper (`npm run scrape`)
+  - `browse`: Runs the CLI viewer (`npm run browse`)
+  - `dbreset`: Resets the database (`npm run db:reset`)
   - `help`: Displays help for the shell
 
 ### Manual Setup
@@ -53,7 +53,7 @@ If you prefer not to use the Dev Container, you can set up the project manually:
 2. Install dependencies:
 
    ```bash
-   bun install
+   npm install
    ```
 
 3. Create a `.env` file with your configuration (see Configuration section below)
@@ -65,7 +65,7 @@ If you prefer not to use the Dev Container, you can set up the project manually:
 Run the scraper:
 
 ```bash
-bun run scrape
+npm run scrape
 ```
 
 The scraper will:
@@ -81,7 +81,7 @@ The scraper will:
 Launch the CLI viewer:
 
 ```bash
-bun run browse
+npm run browse
 ```
 
 ### Exporting Data 📤
@@ -193,10 +193,10 @@ Showing posts 1-2 of 45
 ### Additional Commands
 
 ```bash
-bun run db:reset    # Reset the database
-bun run lint        # Run ESLint
-bun run lint:fix    # Fix ESLint issues
-bun run format      # Format code with Prettier
+npm run db:reset    # Reset the database
+npm run lint        # Run ESLint
+npm run lint:fix    # Fix ESLint issues
+npm run format      # Format code with Prettier
 ```
 
 ## Project Structure 📁
@@ -214,13 +214,41 @@ src/
     └── viewer.ts      # CLI viewer application
 ```
 
+## Using FlareSolverr (Optional)
+
+If the target forum is protected by Cloudflare or other anti-bot measures, you can use [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) to bypass these protections.
+
+1.  **Run FlareSolverr using Docker:**
+
+    ```bash
+    docker run -d \
+      --name=flaresolverr \
+      -p 8191:8191 \
+      -e LOG_LEVEL=info \
+      --restart unless-stopped \
+      ghcr.io/flaresolverr/flaresolverr:latest
+    ```
+
+    This command will start a FlareSolverr container and make it accessible on port 8191.
+
+2.  **Configure the scraper:**
+
+    In your `.env` file, set the `USE_FLARESOLVERR` variable to the URL of your FlareSolverr instance:
+
+    ```env
+    USE_FLARESOLVERR=http://localhost:8191/v1
+    ```
+
+The scraper will then proxy its requests through FlareSolverr.
+
 ## Configuration ⚙️
 
 The scraper is configured using environment variables, typically set in a `.env` file. Here's a breakdown of each option:
 
 | Variable Name              | Description                                       | Default Value              | Type      |
 | -------------------------- | ------------------------------------------------- | -------------------------- | --------- |
-| `FORUM_URL`                | The base URL of the Hexus forum to scrape         | `""`                       | `string`  |
+| `FORUM_URL`                | The base URL of the forum to scrape               | `""`                       | `string`  |
+| `FORUM_URL_START_AT`       | The subforum URL where to start scraping          | (value of `FORUM_URL`)     | `string`  |
 | `DATABASE_PATH`            | Path to the SQLite database file                  | `data/forum_data.db`       | `string`  |
 | `USER_AGENT`               | User-Agent string for HTTP requests               | (Chrome User Agent)        | `string`  |
 | `HEADERS`                  | HTTP headers to include with requests             | (Chrome User Agent header) | `object`  |
@@ -235,6 +263,7 @@ The scraper is configured using environment variables, typically set in a `.env`
 | `MAX_POSTS_PER_THREAD`     | Maximum posts to scrape per thread                | `null`                     | `number?` |
 | `MAX_PAGES_PER_SUBFORUM`   | Maximum pages to scrape per subforum              | `null`                     | `number?` |
 | `MAX_PAGES_PER_THREAD`     | Maximum pages to scrape per thread                | `null`                     | `number?` |
+| `USE_FLARESOLVERR`         | Address of a [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) instance to use. See above. | `null` | `string` |
 
 **Example `.env` file:**
 
@@ -248,6 +277,88 @@ TEST_MODE=false
 MAX_SUBFORUMS=5
 MAX_THREADS_PER_SUBFORUM=10
 MAX_POSTS_PER_THREAD=20
+```
+
+## Overriding CSS Selectors
+
+The scraper can be adapted to work with different forum layouts or themes by overriding the default CSS selectors. You can change these values in your `.env` file.
+
+| Variable                          | Description                                               | Default Value                                                                                             |
+| --------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `CSS_SELECTOR_SUBFORUM`           | Selector for links to subforums on a forum page.          | `ol#forums > li.forumbit_nopost > ol.childforum > li.forumbit_post h2.forumtitle > a`                      |
+| `CSS_SELECTOR_THREAD`             | Selector for the container of each thread on a subforum page. | `#threads > li.threadbit`                                                                                 |
+| `CSS_SELECTOR_THREAD_TITLE`       | Selector for the title link of a thread.                  | `h3.threadtitle a.title`                                                                                  |
+| `CSS_SELECTOR_THREAD_AUTHOR_DATE` | Selector for the element containing thread author and date. | `.threadmeta .author span.label`                                                                          |
+| `CSS_SELECTOR_STATS_THREADS`      | Selector for the total number of threads on the forum.    | `dt:contains("Threads") + dd`                                                                             |
+| `CSS_SELECTOR_STATS_POSTS`        | Selector for the total number of posts on the forum.      | `dt:contains("Posts") + dd`                                                                               |
+| `CSS_SELECTOR_STATS_MEMBERS`      | Selector for the total number of members on the forum.    | `dt:contains("Members") + dd`                                                                             |
+| `CSS_SELECTOR_PAGINATION`         | Selector for the 'next page' link.                        | `a[rel="next"]`                                                                                           |
+| `CSS_SELECTOR_PAGINATION_LAST`    | Selector for the last page link in a pagination control.  | `div[id*="-pagenav-"] .pagination a`                                                                       |
+| `CSS_SELECTOR_POST`               | Selector for the container of an individual post.         | `li.postcontainer`                                                                                        |
+| `CSS_SELECTOR_POST_AUTHOR`        | Selector for the author's username within a post.         | `.username strong`                                                                                        |
+| `CSS_SELECTOR_POST_AUTHOR_LINK`   | Selector for the link to the author's profile.            | `a.username`                                                                                              |
+| `CSS_SELECTOR_POST_CONTENT`       | Selector for the main content of a post.                  | `div[id^="post_message_"] blockquote.postcontent`                                                         |
+| `CSS_SELECTOR_POST_TIMESTAMP`     | Selector for the timestamp of a post.                     | `div.posthead span.postdate span.date`                                                                    |
+| `CSS_SELECTOR_POST_IMAGE`         | Selector for images within a post's content.              | `.js-post__content-text img[src]`                                                                         |
+| `CSS_SELECTOR_POST_ID_ATTRIBUTE`  | The HTML attribute that contains the unique post ID.      | `data-node-id`                                                                                            |
+| `CSS_SELECTOR_POST_ID_REGEX`      | The regex to extract the post ID from the attribute.      | `(\\d+)`                                                                                                  |
+
+### Example: Subforum Page
+
+If the HTML for a list of subforums looks like this:
+
+```html
+<div class="forum-list">
+  <div class="forum-item">
+    <h2><a href="/gadgets-forum">Gadgets</a></h2>
+  </div>
+  <div class="forum-item">
+    <h2><a href="/software-forum">Software</a></h2>
+  </div>
+</div>
+```
+
+You would set the following in your `.env` file:
+
+```env
+CSS_SELECTOR_SUBFORUM=".forum-item h2 a"
+```
+
+### Example: Thread Page
+
+If the HTML for a thread's posts looks like this:
+
+```html
+<div class="post-list">
+  <article class="post" data-post-id="12345">
+    <div class="author-details">
+      <a href="/user/johndoe" class="username">JohnDoe</a>
+    </div>
+    <div class="post-body">
+      <p>This is the first post content.</p>
+      <img src="/images/my-image.jpg">
+    </div>
+    <div class="post-meta">
+      <span class="timestamp">Jan 01, 2025</span>
+    </div>
+  </article>
+</div>
+<div class="pagination">
+    <a href="/thread?page=2" class="next-page">Next</a>
+</div>
+```
+
+You would set the following in your `.env` file:
+
+```env
+CSS_SELECTOR_POST="article.post"
+CSS_SELECTOR_POST_ID_ATTRIBUTE="data-post-id"
+CSS_SELECTOR_POST_ID_REGEX="(\\d+)"
+CSS_SELECTOR_POST_AUTHOR=".username"
+CSS_SELECTOR_POST_CONTENT=".post-body p"
+CSS_SELECTOR_POST_IMAGE=".post-body img"
+CSS_SELECTOR_POST_TIMESTAMP=".timestamp"
+CSS_SELECTOR_PAGINATION="a.next-page"
 ```
 
 ## Error Handling 🔧
