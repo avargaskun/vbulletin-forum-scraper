@@ -146,7 +146,6 @@ export async function initialiseDatabase(): Promise<void> {
     } else {
       answer = await askQuestion('Database exists. Delete and recreate? (y/N) ')
     }
-
     if (answer.trim().toLowerCase() === 'y') {
       if (db) {
         db.close()
@@ -168,7 +167,7 @@ export async function initialiseDatabase(): Promise<void> {
 export function closeDatabase(): void {
   if (db) {
     db.close()
-    logError(`${EMOJI_SUCCESS} Database connection closed.`)
+    logInfo(`${EMOJI_SUCCESS} Database connection closed.`)
     db = null
   }
 }
