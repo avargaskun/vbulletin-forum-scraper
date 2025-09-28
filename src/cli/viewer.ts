@@ -27,6 +27,7 @@ import { intToRGBA } from '@jimp/utils'
 import boxen from 'boxen'
 
 const ITEMS_PER_PAGE = 10
+let rl: readline.Interface
 
 // Helper Functions
 function clearConsole(): void {
@@ -54,7 +55,6 @@ async function showMenu(prompt: string, options: string[]): Promise<number> {
     console.log(`${index + 1}. ${option}`)
   })
 
-  const rl = readline.createInterface({ input, output })
   try {
     // eslint-disable-next-line no-constant-condition
     while (true) {
@@ -69,7 +69,7 @@ async function showMenu(prompt: string, options: string[]): Promise<number> {
       }
     }
   } finally {
-    rl.close()
+    // rl.close() // This will be closed in main
   }
 }
 
@@ -178,36 +178,29 @@ async function viewThread(
     }
   }
 
-  const rl = readline.createInterface({ input, output })
-  try {
-    let prompt = `\n${EMOJI_SUCCESS} Press Enter to return to thread list, P for previous page, N for next page`
-    if (subforumUrl) {
-      prompt += ', B to go back to subforum'
-    }
-    const answer = await rl.question(`${prompt}: `)
+  let prompt = `\n${EMOJI_SUCCESS} Press Enter to return to thread list, P for previous page, N for next page`
+  if (subforumUrl) {
+    prompt += ', B to go back to subforum'
+  }
+  const answer = await rl.question(`${prompt}: `)
 
-    if (answer.toLowerCase() === 'p' && page > 1) {
-      await viewThread(threadUrl, page - 1, subforumUrl)
-    } else if (
-      answer.toLowerCase() === 'n' &&
-      page * ITEMS_PER_PAGE < posts.length
-    ) {
-      await viewThread(threadUrl, page + 1, subforumUrl)
-    } else if (answer.toLowerCase() === 'b' && subforumUrl) {
-      await browseThreads(subforumUrl)
-    } else {
-      const threads = await getThreadsBySubforum(subforumUrl ? subforumUrl : '')
-      if (threads) {
-        const selectedThread = threads.find(
-          (thread) => thread.url === threadUrl
-        )
-        if (selectedThread) {
-          await browseThreads(selectedThread.subforumUrl)
-        }
+  if (answer.toLowerCase() === 'p' && page > 1) {
+    await viewThread(threadUrl, page - 1, subforumUrl)
+  } else if (
+    answer.toLowerCase() === 'n' &&
+    page * ITEMS_PER_PAGE < posts.length
+  ) {
+    await viewThread(threadUrl, page + 1, subforumUrl)
+  } else if (answer.toLowerCase() === 'b' && subforumUrl) {
+    await browseThreads(subforumUrl)
+  } else {
+    const threads = await getThreadsBySubforum(subforumUrl ? subforumUrl : '')
+    if (threads) {
+      const selectedThread = threads.find((thread) => thread.url === threadUrl)
+      if (selectedThread) {
+        await browseThreads(selectedThread.subforumUrl)
       }
     }
-  } finally {
-    rl.close()
   }
 }
 
@@ -227,12 +220,7 @@ async function browseThreads(
   const threads: Thread[] = await getThreadsBySubforum(subforumUrl)
   if (threads.length === 0) {
     console.log(`${EMOJI_WARN} No threads found in this subforum.`)
-    const rl = readline.createInterface({ input, output })
-    try {
-      await rl.question(`${EMOJI_INFO} Press Enter to go back...`)
-    } finally {
-      rl.close()
-    }
+    await rl.question(`${EMOJI_INFO} Press Enter to go back...`)
     return
   }
 
@@ -267,7 +255,7 @@ async function browseThreads(
   )
 
   const choice = await showMenu('Select a thread:', options)
-  if (choice === -1 || options[options.length - 1] === 'Back') {
+  if (choice === -1 || options[choice - 1] === 'Back') {
     return
   }
 
@@ -298,12 +286,7 @@ async function browseSubforums(
   const subforums: Subforum[] = await getSubforums(parentId)
   if (subforums.length === 0) {
     console.log(`${EMOJI_WARN} No subforums found.`)
-    const rl = readline.createInterface({ input, output })
-    try {
-      await rl.question(`${EMOJI_INFO} Press Enter to exit...`)
-    } finally {
-      rl.close()
-    }
+    await rl.question(`${EMOJI_INFO} Press Enter to exit...`)
     return
   }
 
@@ -356,11 +339,13 @@ async function browseSubforums(
 // Main entry point
 async function main(): Promise<void> {
   await setupDatabase()
+  rl = readline.createInterface({ input, output })
   try {
     await browseSubforums()
   } catch (error) {
     console.error(`${EMOJI_ERROR} Error:`, error)
   } finally {
+    rl.close()
     await closeDatabase()
   }
 }
