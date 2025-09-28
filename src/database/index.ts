@@ -205,17 +205,15 @@ export function getPostsByThread(threadUrl: string): Post[] {
   return stmt.all(threadUrl) as Post[]
 }
 
-export async function getAllThreads(): Promise<Thread[]> {
+export function getAllThreads(): Thread[] {
   const currentDB = getDatabase()
   const stmt = currentDB.prepare(
     'SELECT id, subforum_url as subforumUrl, title, url, creator, created_at as createdAt FROM threads'
   )
-  return (await stmt.all()) as Thread[]
+  return stmt.all() as Thread[]
 }
 
-export async function getThreadsWithRecentPosts(
-  date: string
-): Promise<Thread[]> {
+export function getThreadsWithRecentPosts(date: string): Thread[] {
   const currentDB = getDatabase()
   const stmt = currentDB.prepare(`
     SELECT DISTINCT t.id, t.subforum_url as subforumUrl, t.title, t.url, t.creator, t.created_at as createdAt
@@ -223,12 +221,10 @@ export async function getThreadsWithRecentPosts(
     INNER JOIN posts p ON t.url = p.thread_url
     WHERE p.posted_at > ?
   `)
-  return (await stmt.all(date)) as Thread[]
+  return stmt.all(date) as Thread[]
 }
 
-export async function getThreadsCountBySubforum(
-  subforumUrl: string
-): Promise<number> {
+export function getThreadsCountBySubforum(subforumUrl: string): number {
   const currentDB = getDatabase()
   const stmt = currentDB.prepare(
     'SELECT COUNT(*) as count FROM threads WHERE subforum_url = ?'
