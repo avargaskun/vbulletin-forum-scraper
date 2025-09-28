@@ -14,3 +14,6 @@ dist/
 data/
 .env
 db-migration.ts
+
+export.text
+export.json

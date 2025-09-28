@@ -205,6 +205,25 @@ export function getPostsByThread(threadUrl: string): Post[] {
   return stmt.all(threadUrl) as Post[]
 }
 
+export function getAllThreads(): Thread[] {
+  const currentDB = getDatabase()
+  const stmt = currentDB.prepare(
+    'SELECT id, subforum_url as subforumUrl, title, url, creator, created_at as createdAt FROM threads'
+  )
+  return stmt.all() as Thread[]
+}
+
+export function getThreadsWithRecentPosts(date: string): Thread[] {
+  const currentDB = getDatabase()
+  const stmt = currentDB.prepare(`
+    SELECT DISTINCT t.id, t.subforum_url as subforumUrl, t.title, t.url, t.creator, t.created_at as createdAt
+    FROM threads t
+    INNER JOIN posts p ON t.url = p.thread_url
+    WHERE p.posted_at > ?
+  `)
+  return stmt.all(date) as Thread[]
+}
+
 export function getThreadsCountBySubforum(subforumUrl: string): number {
   const currentDB = getDatabase()
   const stmt = currentDB.prepare(
