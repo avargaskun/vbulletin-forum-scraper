@@ -11,9 +11,8 @@ import yargs from 'yargs'
 import { hideBin } from 'yargs/helpers'
 import { writeFileSync } from 'fs'
 
-const OUTPUT_FILE = 'export.txt'
-
-async function exportData(date?: string) {
+async function exportData(date?: string, format: string = 'json') {
+  const outputFile = `export.${format}`
   await setupDatabase()
 
   try {
@@ -26,28 +25,35 @@ async function exportData(date?: string) {
       return
     }
 
-    let output = ''
-
-    for (const thread of threads) {
-      output += `Thread: ${thread.title}\n`
-      output += `Creator: ${thread.creator}\n`
-      output += `Date: ${thread.createdAt}\n`
-      output += `URL: ${thread.url}\n\n`
-
-      const posts = await getPostsByThread(thread.url)
-      for (const post of posts) {
-        output += `  User: ${post.username}\n`
-        output += `  Date: ${post.postedAt}\n`
-        output += `  Comment: ${post.comment}\n`
-        output += `  ----------------------------------------\n`
+    if (format === 'json') {
+      const data = []
+      for (const thread of threads) {
+        const posts = await getPostsByThread(thread.url)
+        data.push({ ...thread, posts })
       }
-      output += `\n============================================================\n\n`
+      writeFileSync(outputFile, JSON.stringify(data, null, 2))
+    } else {
+      let output = ''
+      for (const thread of threads) {
+        output += `Thread: ${thread.title}\n`
+        output += `Creator: ${thread.creator}\n`
+        output += `Date: ${thread.createdAt}\n`
+        output += `URL: ${thread.url}\n\n`
+
+        const posts = await getPostsByThread(thread.url)
+        for (const post of posts) {
+          output += `  User: ${post.username}\n`
+          output += `  Date: ${post.postedAt}\n`
+          output += `  Comment: ${post.comment}\n`
+          output += `  ----------------------------------------\n`
+        }
+        output += `\n============================================================\n\n`
+      }
+      writeFileSync(outputFile, output)
     }
 
-    writeFileSync(OUTPUT_FILE, output)
-
     logInfo(
-      `${EMOJI_SUCCESS} Successfully exported ${threads.length} threads to ${OUTPUT_FILE}`
+      `${EMOJI_SUCCESS} Successfully exported ${threads.length} threads to ${outputFile}`
     )
   } catch (error) {
     logError(`${EMOJI_ERROR} Failed to export data:`, error as Error)
@@ -63,18 +69,28 @@ async function main() {
       type: 'string',
       description: 'Export posts newer than this date (YYYY-MM-DD)',
     })
+    .option('format', {
+      alias: 'f',
+      type: 'string',
+      choices: ['text', 'json'],
+      default: 'json',
+      description: 'Output format',
+    })
     .help()
     .alias('help', 'h').argv
 
   const date = argv.date
+  const format = argv.format
 
   if (date) {
-    logInfo(`${EMOJI_INFO} Exporting threads with posts newer than ${date}...`)
+    logInfo(
+      `${EMOJI_INFO} Exporting threads with posts newer than ${date} in ${format} format...`
+    )
   } else {
-    logInfo(`${EMOJI_INFO} Exporting all threads...`)
+    logInfo(`${EMOJI_INFO} Exporting all threads in ${format} format...`)
   }
 
-  await exportData(date)
+  await exportData(date, format)
 }
 
 main()

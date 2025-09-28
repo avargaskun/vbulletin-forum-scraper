@@ -15,4 +15,5 @@ data/
 .env
 db-migration.ts
 
-export.txt
+export.text
+export.json
