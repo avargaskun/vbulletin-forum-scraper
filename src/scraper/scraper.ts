@@ -213,7 +213,7 @@ function updatePercentages(): void {
 }
 
 async function scrapeSubforums(
-  url: string = config.FORUM_URL,
+  url: string = config.FORUM_URL_START_AT,
   parentId: number | null = null
 ): Promise<void> {
   if (
@@ -223,12 +223,24 @@ async function scrapeSubforums(
     return
   }
 
-  const html = await fetchWithRetry(url)
+  const html = await fetchWithRetry(url, { shouldMarkScraped: false })
   if (!html) {
     logError(`Failed to fetch forum HTML from ${url}.`)
     return
   }
   const $ = cheerio.load(html)
+
+  // Check if the root URL is a subforum itself
+  if (!parentId) {
+    const threadRows = $(config.CSS_SELECTOR_THREAD)
+    if (threadRows.length > 0) {
+      logInfo('Root URL appears to be a subforum page. Scraping it directly.')
+      const title = $('title').text().trim()
+      const subForumRecord = await insertSubforum(title, url, null)
+      parentId = subForumRecord.id
+      await scrapeSubforumThreads(url)
+    }
+  }
 
   const subforumListItems = $(config.CSS_SELECTOR_SUBFORUM)
 

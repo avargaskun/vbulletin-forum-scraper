@@ -49,6 +49,9 @@ if (!existsSync(dbDir)) {
 
 export const config: Config = {
   FORUM_URL: String(getEnvVar('FORUM_URL', '')),
+  FORUM_URL_START_AT: String(
+    getEnvVar('FORUM_URL_START_AT', getEnvVar('FORUM_URL', ''))
+  ),
   DATABASE_PATH,
   USER_AGENT:
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',

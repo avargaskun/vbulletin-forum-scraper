@@ -17,6 +17,20 @@
                 "<node_internals>/**"
             ],
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Scrape",
+            "type": "node",
+            "request": "launch",
+            "runtimeExecutable": "npm",
+            "runtimeArgs": [
+                "run",
+                "scrape"
+            ],
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "console": "integratedTerminal"
         }
     ]
 }
