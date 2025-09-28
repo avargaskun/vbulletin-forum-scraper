@@ -167,7 +167,7 @@ export async function initialiseDatabase(): Promise<void> {
 export function closeDatabase(): void {
   if (db) {
     db.close()
-    logError(`${EMOJI_SUCCESS} Database connection closed.`)
+    logInfo(`${EMOJI_SUCCESS} Database connection closed.`)
     db = null
   }
 }

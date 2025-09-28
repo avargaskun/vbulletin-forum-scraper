@@ -251,15 +251,15 @@ async function getForumStats(): Promise<ForumStats> {
 
   try {
     totals.totalThreads = parseInt(
-      $('dt:contains("Threads") + dd').text().replace(/,/g, ''),
+      $(config.CSS_SELECTOR_STATS_THREADS).text().replace(/,/g, ''),
       10
     )
     totals.totalPosts = parseInt(
-      $('dt:contains("Posts") + dd').text().replace(/,/g, ''),
+      $(config.CSS_SELECTOR_STATS_POSTS).text().replace(/,/g, ''),
       10
     )
     totals.totalUsers = parseInt(
-      $('dt:contains("Members") + dd').text().replace(/,/g, ''),
+      $(config.CSS_SELECTOR_STATS_MEMBERS).text().replace(/,/g, ''),
       10
     )
 
@@ -454,10 +454,10 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
         }
       }
 
-      let nextLink = $('div[id*="-pagenav-"] .pagination a').last().attr('href')
+      let nextLink = $(config.CSS_SELECTOR_PAGINATION_LAST).last().attr('href')
 
       if (!nextLink) {
-        nextLink = $('a[rel="next"]').attr('href')
+        nextLink = $(config.CSS_SELECTOR_PAGINATION).attr('href')
       }
       pageUrl = nextLink ? new URL(nextLink, config.FORUM_URL).href : ''
 
@@ -537,7 +537,7 @@ async function scrapeThreadPosts(
     try {
       const html = await fetchWithRetry(pageUrl)
       const $ = cheerio.load(html)
-      const posts = $('li.postcontainer')
+      const posts = $(config.CSS_SELECTOR_POST)
 
       simpleLogInfo(`Found ${posts.length} posts on page ${pageUrl}`)
       pageCount++
@@ -553,27 +553,29 @@ async function scrapeThreadPosts(
         try {
           const $post = $(post)
 
-          const usernameElement = $post.find('.username strong')
+          const usernameElement = $post.find(config.CSS_SELECTOR_POST_AUTHOR)
           const username = usernameElement.text().trim()
           const userUrl = new URL(
-            $post.find('a.username').attr('href') || '',
+            $post.find(config.CSS_SELECTOR_POST_AUTHOR_LINK).attr('href') || '',
             config.FORUM_URL
           ).href
           const comment = $post
-            .find('div[id^="post_message_"] blockquote.postcontent')
+            .find(config.CSS_SELECTOR_POST_CONTENT)
             .text()
             .trim()
           const postedAt =
-            $post.find('div.posthead span.postdate span.date').text().trim() ||
+            $post.find(config.CSS_SELECTOR_POST_TIMESTAMP).text().trim() ||
             new Date().toISOString()
           // Extract Post ID
-          const postIdMatch = $post.attr('id')?.match(/post_(\d+)/)
+          const postIdMatch = $post
+            .attr(config.CSS_SELECTOR_POST_ID_ATTRIBUTE)
+            ?.match(new RegExp(config.CSS_SELECTOR_POST_ID_REGEX))
           const postId = postIdMatch ? parseInt(postIdMatch[1], 10) : null
 
           if (username && comment && userUrl && postId) {
             insertPost(threadUrl, username, comment, postedAt, userUrl)
 
-            const imageLinks = $post.find('.postcontent img[src]')
+            const imageLinks = $post.find(config.CSS_SELECTOR_POST_IMAGE)
             for (const img of imageLinks.toArray()) {
               const $img = $(img)
               const src = $img.attr('src')
@@ -601,7 +603,7 @@ async function scrapeThreadPosts(
         }
       }
 
-      const nextLink = $('a[rel="next"]').attr('href')
+      const nextLink = $(config.CSS_SELECTOR_PAGINATION).attr('href')
       pageUrl = nextLink ? new URL(nextLink, config.FORUM_URL).href : ''
 
       if (pageUrl) {
@@ -623,12 +625,52 @@ async function confirmScrape(): Promise<boolean> {
   return answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes'
 }
 
-async function main() {
+async function createFlaresolverrSession(): Promise<void> {
   if (config.USE_FLARESOLVERR) {
     flareSolverrUrl = config.USE_FLARESOLVERR
     logInfo(`Using FlareSolverr proxy at: ${flareSolverrUrl}`)
+    try {
+      const sessionId = randomUUID()
+      logInfo('Creating FlareSolverr session...')
+      const response = await fetch(flareSolverrUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cmd: 'sessions.create', session: sessionId }),
+      })
+      const data = (await response.json()) as FlareSolverrSessionCreateResponse
+      if (data.status === 'ok' && data.session === sessionId) {
+        flareSolverrSessionId = data.session
+        logSuccess(`FlareSolverr session created: ${flareSolverrSessionId}`)
+      } else {
+        throw new Error(`Failed to create session: ${data.message}`)
+      }
+    } catch (error) {
+      logError('Could not create FlareSolverr session.', error as Error)
+      process.exit(1)
+    }
   }
+}
 
+async function destroyFlaresolverrSession(): Promise<void> {
+  if (flareSolverrUrl && flareSolverrSessionId) {
+    try {
+      logInfo('Destroying FlareSolverr session...')
+      await fetch(flareSolverrUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cmd: 'sessions.destroy',
+          session: flareSolverrSessionId,
+        }),
+      })
+      logSuccess('FlareSolverr session destroyed.')
+    } catch (error) {
+      logError('Failed to destroy FlareSolverr session.', error as Error)
+    }
+  }
+}
+
+async function main() {
   const allUsers = new Set<string>()
   let exitCode = 0
 
@@ -644,28 +686,7 @@ async function main() {
       binariesFailed: 0,
     }
 
-    if (flareSolverrUrl) {
-      try {
-        const sessionId = randomUUID()
-        logInfo('Creating FlareSolverr session...')
-        const response = await fetch(flareSolverrUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cmd: 'sessions.create', session: sessionId }),
-        })
-        const data =
-          (await response.json()) as FlareSolverrSessionCreateResponse
-        if (data.status === 'ok' && data.session === sessionId) {
-          flareSolverrSessionId = data.session
-          logSuccess(`FlareSolverr session created: ${flareSolverrSessionId}`)
-        } else {
-          throw new Error(`Failed to create session: ${data.message}`)
-        }
-      } catch (error) {
-        logError('Could not create FlareSolverr session.', error as Error)
-        process.exit(1)
-      }
-    }
+    await createFlaresolverrSession()
 
     await initialiseDatabase()
 
@@ -786,22 +807,7 @@ async function main() {
     logError('Fatal error', error as Error)
     exitCode = 1
   } finally {
-    if (flareSolverrUrl && flareSolverrSessionId) {
-      try {
-        logInfo('Destroying FlareSolverr session...')
-        await fetch(flareSolverrUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            cmd: 'sessions.destroy',
-            session: flareSolverrSessionId,
-          }),
-        })
-        logSuccess('FlareSolverr session destroyed.')
-      } catch (error) {
-        logError('Failed to destroy FlareSolverr session.', error as Error)
-      }
-    }
+    destroyFlaresolverrSession()
     closeDatabase()
     process.exit(exitCode)
   }

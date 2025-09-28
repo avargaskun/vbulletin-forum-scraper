@@ -96,5 +96,51 @@ export const config: Config = {
       '.threadmeta .author span.label'
     )
   ),
+  CSS_SELECTOR_STATS_THREADS: String(
+    getEnvVar('CSS_SELECTOR_STATS_THREADS', 'dt:contains("Threads") + dd')
+  ),
+  CSS_SELECTOR_STATS_POSTS: String(
+    getEnvVar('CSS_SELECTOR_STATS_POSTS', 'dt:contains("Posts") + dd')
+  ),
+  CSS_SELECTOR_STATS_MEMBERS: String(
+    getEnvVar('CSS_SELECTOR_STATS_MEMBERS', 'dt:contains("Members") + dd')
+  ),
+  CSS_SELECTOR_PAGINATION: String(
+    getEnvVar('CSS_SELECTOR_PAGINATION', 'a[rel="next"]')
+  ),
+  CSS_SELECTOR_PAGINATION_LAST: String(
+    getEnvVar(
+      'CSS_SELECTOR_PAGINATION_LAST',
+      'div[id*="-pagenav-"] .pagination a'
+    )
+  ),
+  CSS_SELECTOR_POST: String(getEnvVar('CSS_SELECTOR_POST', 'li.postcontainer')),
+  CSS_SELECTOR_POST_AUTHOR: String(
+    getEnvVar('CSS_SELECTOR_POST_AUTHOR', '.username strong')
+  ),
+  CSS_SELECTOR_POST_AUTHOR_LINK: String(
+    getEnvVar('CSS_SELECTOR_POST_AUTHOR_LINK', 'a.username')
+  ),
+  CSS_SELECTOR_POST_CONTENT: String(
+    getEnvVar(
+      'CSS_SELECTOR_POST_CONTENT',
+      'div[id^="post_message_"] blockquote.postcontent'
+    )
+  ),
+  CSS_SELECTOR_POST_TIMESTAMP: String(
+    getEnvVar(
+      'CSS_SELECTOR_POST_TIMESTAMP',
+      'div.posthead span.postdate span.date'
+    )
+  ),
+  CSS_SELECTOR_POST_IMAGE: String(
+    getEnvVar('CSS_SELECTOR_POST_IMAGE', '.js-post__content-text img[src]')
+  ),
+  CSS_SELECTOR_POST_ID_ATTRIBUTE: String(
+    getEnvVar('CSS_SELECTOR_POST_ID_ATTRIBUTE', 'data-node-id')
+  ),
+  CSS_SELECTOR_POST_ID_REGEX: String(
+    getEnvVar('CSS_SELECTOR_POST_ID_REGEX', '(\\d+)')
+  ),
   USE_FLARESOLVERR: getEnvVar('USE_FLARESOLVERR', null) as string | null,
 }
