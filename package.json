@@ -1,22 +1,22 @@
 {
   "name": "hexus-forum-scraper",
   "version": "0.1.0",
-  "type": "module",
   "scripts": {
-    "scrape": "bun run src/scraper/scraper.ts",
-    "browse": "bun run src/cli/viewer.ts",
-    "db:reset": "bun run src/database/index.ts",
+    "scrape": "ts-node src/scraper/scraper.ts",
+    "browse": "ts-node src/cli/viewer.ts",
+    "db:reset": "ts-node src/database/index.ts",
+    "db:seed": "ts-node src/database/seed.ts",
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "generate": "bun run src/frontend/html-generator.ts",
-    "preview": "bun run src/frontend/server.ts",
-    "build": "bun run generate && bun run preview"
+    "generate": "ts-node src/frontend/html-generator.ts",
+    "preview": "ts-node src/frontend/server.ts",
+    "build": "npm run generate && npm run preview"
   },
   "devDependencies": {
     "@jimp/types": "^1.6.0",
-    "@types/bun": "latest",
+    "@types/better-sqlite3": "^7.6.11",
     "@typescript-eslint/eslint-plugin": "^6.13.1",
     "@typescript-eslint/parser": "^6.13.1",
     "eslint": "^8.55.0",
@@ -31,16 +31,14 @@
   "dependencies": {
     "@jimp/utils": "^1.6.0",
     "boxen": "^8.0.1",
-    "bun": "^1.2.2",
     "chalk": "^5.4.1",
     "cheerio": "^1.0.0-rc.12",
     "dotenv": "^16.3.1",
     "jimp": "^1.6.0",
     "node-fetch": "^3.3.2",
     "pino": "^9.6.0",
-    "pino-pretty": "^13.0.0"
-  },
-  "engines": {
-    "bun": ">=1.0.0"
+    "pino-pretty": "^13.0.0",
+    "better-sqlite3": "^11.1.2",
+    "ts-node": "^10.9.2"
   }
 }

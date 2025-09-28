@@ -213,7 +213,7 @@ function updatePercentages(): void {
 }
 
 async function scrapeSubforums(
-  url: string = config.FORUM_URL,
+  url: string = config.FORUM_URL_START_AT,
   parentId: number | null = null
 ): Promise<void> {
   if (
@@ -223,16 +223,26 @@ async function scrapeSubforums(
     return
   }
 
-  const html = await fetchWithRetry(url)
+  const html = await fetchWithRetry(url, { shouldMarkScraped: false })
   if (!html) {
     logError(`Failed to fetch forum HTML from ${url}.`)
     return
   }
   const $ = cheerio.load(html)
 
-  const subforumListItems = $(
-    'ol#forums > li.forumbit_nopost > ol.childforum > li.forumbit_post h2.forumtitle > a'
-  )
+  // Check if the root URL is a subforum itself
+  if (!parentId) {
+    const threadRows = $(config.CSS_SELECTOR_THREAD)
+    if (threadRows.length > 0) {
+      logInfo('Root URL appears to be a subforum page. Scraping it directly.')
+      const title = $('title').text().trim()
+      const subForumRecord = await insertSubforum(title, url, null)
+      parentId = subForumRecord.id
+      await scrapeSubforumThreads(url)
+    }
+  }
+
+  const subforumListItems = $(config.CSS_SELECTOR_SUBFORUM)
 
   simpleLogInfo(
     `Found ${subforumListItems.length} subforums/child forums on ${url}`
@@ -248,7 +258,7 @@ async function scrapeSubforums(
 
     const $listItem = $(element)
     const title = $listItem.text().trim()
-    let href = $listItem.attr('href')
+    const href = $listItem.attr('href')
 
     if (!title || !href) {
       logWarning(`Invalid forum title or href on ${url}`)
@@ -297,7 +307,7 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
       }
       const $ = cheerio.load(html)
 
-      const threadRows = $('#threads > li.threadbit')
+      const threadRows = $(config.CSS_SELECTOR_THREAD)
 
       simpleLogInfo(`Found ${threadRows.length} threads on page: ${pageUrl}`)
       stats.pagesProcessed++
@@ -314,7 +324,7 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
         try {
           const $threadRow = $(threadRow)
 
-          const titleLink = $threadRow.find('h3.threadtitle a.title')
+          const titleLink = $threadRow.find(config.CSS_SELECTOR_THREAD_TITLE)
           const title = titleLink.text().trim()
           const href = titleLink.attr('href')
 
@@ -328,7 +338,7 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
           const threadUrl = new URL(href, config.FORUM_URL).href
 
           const authorDateSpan = $threadRow.find(
-            '.threadmeta .author span.label'
+            config.CSS_SELECTOR_THREAD_AUTHOR_DATE
           )
           const authorDateText = authorDateSpan.text().trim()
 
@@ -506,18 +516,16 @@ async function scrapeThreadPosts(
 
 async function confirmScrape(): Promise<boolean> {
   if (config.TEST_MODE) {
-    // Print test mode config before asking for confirmation
-    await new Promise((resolve) => setTimeout(resolve, 100))
     printTestModeConfig(config)
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    return true
   }
   const answer = await askQuestion('Continue with scrape? (y/N) ')
-  await new Promise((resolve) => setTimeout(resolve, 100))
   return answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes'
 }
 
 async function main() {
   const allUsers = new Set<string>()
+  let exitCode = 0
 
   try {
     stats = {
@@ -648,9 +656,10 @@ async function main() {
     logSuccess('Scraping completed successfully.')
   } catch (error) {
     logError('Fatal error', error as Error)
+    exitCode = 1
   } finally {
     closeDatabase()
-    process.exit(1)
+    process.exit(exitCode)
   }
 }
 

@@ -66,6 +66,7 @@ export interface FetchError extends Error {
 
 export interface Config {
   FORUM_URL: string
+  FORUM_URL_START_AT: string
   DATABASE_PATH: string
   USER_AGENT: string
   HEADERS: { 'User-Agent': string }
@@ -80,6 +81,10 @@ export interface Config {
   MAX_POSTS_PER_THREAD: number | null
   MAX_PAGES_PER_SUBFORUM: number | null
   MAX_PAGES_PER_THREAD: number | null
+  CSS_SELECTOR_SUBFORUM: string
+  CSS_SELECTOR_THREAD: string
+  CSS_SELECTOR_THREAD_TITLE: string
+  CSS_SELECTOR_THREAD_AUTHOR_DATE: string
 }
 
 export interface ScrapingState {
