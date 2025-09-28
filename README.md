@@ -84,6 +84,40 @@ Launch the CLI viewer:
 bun run browse
 ```
 
+### Exporting Data 📤
+
+You can export the scraped data to a file in either JSON or plain text format.
+
+Run the exporter:
+
+```bash
+npm run export
+```
+
+By default, this command will export all threads and posts to a file named `export.json`.
+
+**Options:**
+
+-   `--format <format>`, `-f <format>`: Specify the output format.
+    -   `json` (default): Exports data as a JSON file (`export.json`).
+    -   `text`: Exports data as a plain text file (`export.txt`).
+-   `--date <YYYY-MM-DD>`, `-d <YYYY-MM-DD>`: Only export threads with posts newer than the specified date.
+
+**Examples:**
+
+-   Export all data to a text file:
+    ```bash
+    npm run export -- --format text
+    ```
+-   Export posts newer than January 1st, 2023 to a JSON file:
+    ```bash
+    npm run export -- --date 2023-01-01
+    ```
+-   Export posts newer than June 15th, 2024 to a text file:
+    ```bash
+    npm run export -- --date 2024-06-15 --format text
+    ```
+
 Features:
 
 - Browse subforums, threads, and posts with a Minitel-inspired interface
