@@ -7,7 +7,9 @@ import {
 } from '../database'
 import { EMOJI_SUCCESS, EMOJI_ERROR, EMOJI_INFO } from '../types/types'
 import { logInfo, logError } from '../utils/logging'
-import { parseArgs } from 'util'
+import yargs from 'yargs'
+import { hideBin } from 'yargs/helpers'
+import { writeFileSync } from 'fs'
 
 const OUTPUT_FILE = 'export.txt'
 
@@ -42,7 +44,7 @@ async function exportData(date?: string) {
       output += `\n============================================================\n\n`
     }
 
-    await Bun.write(OUTPUT_FILE, output)
+    writeFileSync(OUTPUT_FILE, output)
 
     logInfo(
       `${EMOJI_SUCCESS} Successfully exported ${threads.length} threads to ${OUTPUT_FILE}`
@@ -55,15 +57,16 @@ async function exportData(date?: string) {
 }
 
 async function main() {
-  const { values } = parseArgs({
-    options: {
-      date: {
-        type: 'string',
-      },
-    },
-  })
+  const argv = await yargs(hideBin(process.argv))
+    .option('date', {
+      alias: 'd',
+      type: 'string',
+      description: 'Export posts newer than this date (YYYY-MM-DD)',
+    })
+    .help()
+    .alias('help', 'h').argv
 
-  const date = values.date
+  const date = argv.date
 
   if (date) {
     logInfo(`${EMOJI_INFO} Exporting threads with posts newer than ${date}...`)
@@ -74,6 +77,4 @@ async function main() {
   await exportData(date)
 }
 
-if (import.meta.main) {
-  main()
-}
+main()
