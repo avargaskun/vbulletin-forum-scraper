@@ -268,15 +268,36 @@ The scraper is configured using environment variables, typically set in a `.env`
 **Example `.env` file:**
 
 ```env
-FORUM_URL=https://forums.hexus.net
-DATABASE_PATH=data/my_forum_data.db
-DELAY_BETWEEN_REQUESTS=1000
-MAX_RETRIES=5
-DOWNLOAD_FILES=true
+# Required
+FORUM_URL=https://example-forum.com
+FORUM_URL_START_AT=https://example-forum.com/subforum/category
+
+# Database
+DATABASE_PATH=data/forum.db
+
+# Scraping behaviour
+DOWNLOAD_FILES=false
 TEST_MODE=false
-MAX_SUBFORUMS=5
-MAX_THREADS_PER_SUBFORUM=10
-MAX_POSTS_PER_THREAD=20
+MAX_THREADS_PER_SUBFORUM=5
+
+# Optional: FlareSolverr for Cloudflare-protected forums
+# USE_FLARESOLVERR=http://localhost:8191/v1
+
+# CSS Selectors (override defaults for your specific forum layout)
+CSS_SELECTOR_SUBFORUM=".forumtitle a"
+CSS_SELECTOR_THREAD=".topic-list .topic-item:not(.sticky)"
+CSS_SELECTOR_THREAD_TITLE=".topic-title"
+CSS_SELECTOR_THREAD_AUTHOR_DATE=".topic-info"
+CSS_SELECTOR_POST="li.b-post"
+CSS_SELECTOR_POST_ID_ATTRIBUTE="data-node-id"
+CSS_SELECTOR_POST_ID_REGEX="(\d+)"
+CSS_SELECTOR_POST_AUTHOR=".author strong"
+CSS_SELECTOR_POST_AUTHOR_LINK=".author strong a"
+CSS_SELECTOR_POST_CONTENT=".js-post__content-text"
+CSS_SELECTOR_POST_TIMESTAMP=".b-post__timestamp time"
+CSS_SELECTOR_POST_IMAGE=".js-post__content-text img[src]"
+CSS_SELECTOR_PAGINATION="a[rel=\"next\"]"
+CSS_SELECTOR_PAGINATION_LAST="div[id*=\"-pagenav-\"] .pagination a"
 ```
 
 ## Overriding CSS Selectors
