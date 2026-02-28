@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    name: Build, Push, and Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history needed for git log range
+
+      - name: Compute version tag and image name
+        id: vars
+        run: |
+          VERSION="v$(date -u +%Y.%m.%d)-$(echo "$GITHUB_SHA" | cut -c1-7)"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "image=ghcr.io/${REPO_LOWER}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PREV_TAG=$(gh release list \
+            --limit 1 \
+            --json tagName \
+            --jq '.[0].tagName // empty' \
+            2>/dev/null || echo "")
+
+          if [ -z "$PREV_TAG" ]; then
+            NOTES="## Initial Release
+
+          First automated Docker image release.
+
+          **All commits:**
+          $(git log --oneline --no-decorate | head -50)"
+          else
+            COMMIT_LOG=$(git log --oneline --no-decorate "${PREV_TAG}..HEAD")
+            if [ -z "$COMMIT_LOG" ]; then
+              COMMIT_LOG="No new commits since ${PREV_TAG}."
+            fi
+            NOTES="## Changes since ${PREV_TAG}
+
+          ${COMMIT_LOG}"
+          fi
+
+          echo "${NOTES}" > /tmp/release-notes.md
+          echo "notes_file=/tmp/release-notes.md" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ steps.vars.outputs.image }}:latest
+            ${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.vars.outputs.version }}" \
+            --title "Release ${{ steps.vars.outputs.version }}" \
+            --notes-file "${{ steps.notes.outputs.notes_file }}" \
+            --target "${{ github.sha }}"

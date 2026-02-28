@@ -1,0 +1,15 @@
+node_modules/
+data/
+dist/
+build/
+.git/
+.gitignore
+.devcontainer/
+.vscode/
+.env
+export.json
+export.txt
+export.text
+*.log
+.cache/
+issues-report.md

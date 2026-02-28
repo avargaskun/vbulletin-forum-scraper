@@ -45,7 +45,7 @@ If you prefer not to use the Dev Container, you can set up the project manually:
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/milesburton/vbulletin-forum-scraper.git
+   git clone https://github.com/avargaskun/vbulletin-forum-scraper.git
    ```
 
    **Important**: Ensure the project is in your WSL2 filesystem (e.g., `/home/<your_username>/`)
@@ -57,6 +57,78 @@ If you prefer not to use the Dev Container, you can set up the project manually:
    ```
 
 3. Create a `.env` file with your configuration (see Configuration section below)
+
+### Using the Docker Image
+
+Pre-built images are published automatically to the GitHub Container Registry on every push to `main`.
+
+**Pull the latest image:**
+
+```bash
+docker pull ghcr.io/avargaskun/vbulletin-forum-scraper:latest
+```
+
+**Scrape a forum** (most common use case):
+
+```bash
+docker run --rm \
+  --env-file .env \
+  -v ./data:/app/data \
+  ghcr.io/avargaskun/vbulletin-forum-scraper
+```
+
+Or pass configuration as individual environment variables instead of a `.env` file:
+
+```bash
+docker run --rm \
+  -e FORUM_URL=https://example-forum.com \
+  -e DATABASE_PATH=data/forum.db \
+  -v ./data:/app/data \
+  ghcr.io/avargaskun/vbulletin-forum-scraper
+```
+
+**Export scraped data** to a JSON or text file, then copy it out:
+
+```bash
+docker run --rm \
+  --env-file .env \
+  -v ./data:/app/data \
+  --name forum-export \
+  ghcr.io/avargaskun/vbulletin-forum-scraper export -- --format text
+
+docker cp forum-export:/app/export.txt ./export.txt
+```
+
+**Generate and serve the static HTML site:**
+
+```bash
+docker run --rm \
+  --env-file .env \
+  -v ./data:/app/data \
+  -v ./dist:/app/dist \
+  -p 3000:3000 \
+  ghcr.io/avargaskun/vbulletin-forum-scraper build
+```
+
+Then open [http://localhost:3000](http://localhost:3000) in your browser.
+
+**Interactive CLI browser** (requires a TTY):
+
+```bash
+docker run -it --rm \
+  --env-file .env \
+  -v ./data:/app/data \
+  ghcr.io/avargaskun/vbulletin-forum-scraper browse
+```
+
+**Volume reference:**
+
+| Mount | Purpose |
+|---|---|
+| `-v ./data:/app/data` | SQLite database — persist between runs |
+| `-v ./dist:/app/dist` | Generated static HTML from `generate`/`build` |
+
+All `npm run` commands are available as Docker arguments: `scrape` (default), `export`, `browse`, `generate`, `preview`, `build`, `db:reset`.
 
 ## Usage 📋
 
@@ -393,7 +465,7 @@ The scraper includes:
 
 ## Contributing 🤝
 
-1. Fork the repository from [milesburton/vbulletin-forum-scraper](https://github.com/milesburton/vbulletin-forum-scraper)
+1. Fork the repository from [avargaskun/vbulletin-forum-scraper](https://github.com/avargaskun/vbulletin-forum-scraper)
 2. Create your feature branch
 3. Commit your changes
 4. Push to the branch
