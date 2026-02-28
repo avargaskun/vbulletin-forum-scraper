@@ -219,7 +219,7 @@ export function getThreadsWithRecentPosts(date: string): Thread[] {
     SELECT DISTINCT t.id, t.subforum_url as subforumUrl, t.title, t.url, t.creator, t.created_at as createdAt
     FROM threads t
     INNER JOIN posts p ON t.url = p.thread_url
-    WHERE p.posted_at > ?
+    WHERE date(p.posted_at) > date(?)
   `)
   return stmt.all(date) as Thread[]
 }
@@ -590,15 +590,16 @@ export function getScrapingState(): ScrapingState {
 export function resetScrapingState(): void {
   const currentDB = getDatabase()
   try {
-    const stmt = currentDB.prepare(`
+    currentDB.prepare(`
             UPDATE scraping_state
             SET last_subforum_url = NULL,
                 last_thread_url = NULL,
                 last_updated = datetime('now'),
                 completed = 0
             WHERE id = 1
-        `)
-    stmt.run()
+        `).run()
+    currentDB.prepare('DELETE FROM scraped_urls').run()
+    scrapedUrls.clear()
     logInfo(`${EMOJI_SUCCESS} Scraping state reset`)
   } catch (error) {
     logError(`${EMOJI_ERROR} Failed to reset scraping state:`, error as Error)

@@ -437,7 +437,8 @@ async function scrapeSubforumThreads(subforumUrl: string): Promise<void> {
 
           if (authorMatch) {
             creator = authorMatch[1].trim()
-            createdAt = authorMatch[2].trim()
+            const timeAttr = authorDateSpan.find('time').attr('datetime')
+            createdAt = timeAttr?.trim() || authorMatch[2].trim()
           }
 
           insertThread(subforumUrl, title, threadUrl, creator, createdAt)
@@ -564,6 +565,7 @@ async function scrapeThreadPosts(
             .text()
             .trim()
           const postedAt =
+            $post.find(config.CSS_SELECTOR_POST_TIMESTAMP).attr('datetime')?.trim() ||
             $post.find(config.CSS_SELECTOR_POST_TIMESTAMP).text().trim() ||
             new Date().toISOString()
           // Extract Post ID
